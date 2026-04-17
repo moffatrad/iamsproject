@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IAMS · Welcome</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="welcome-container">
+    <div class="welcome-card">
+      <div class="logo-section">
+        <i class="fas fa-building" style="font-size: 3rem; color: #0f3b5e;"></i>
+        <h1>Industrial Attachment Management System</h1>
+        <p class="subtitle">Department of Computer Science</p>
+        <span class="version-badge">Release 1.0 (MVP)</span>
+      </div>
+
+      <div class="welcome-message">
+        <h2>Welcome to IAMS</h2>
+        <p>A comprehensive platform to manage industrial attachments — connecting students, organizations, supervisors, and coordinators.</p>
+      </div>
+
+      <div class="action-buttons">
+        <button class="btn-primary btn-large" id="showLoginBtn">
+          <i class="fas fa-sign-in-alt"></i> Sign In
+        </button>
+        <button class="btn-secondary btn-large" id="showSignupBtn">
+          <i class="fas fa-user-plus"></i> Create Account
+        </button>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-item">
+          <i class="fas fa-user-graduate"></i>
+          <h3>Students</h3>
+          <p>Register, set preferences, submit logbooks</p>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-building"></i>
+          <h3>Organizations</h3>
+          <p>Create profiles, specify requirements</p>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-user-tie"></i>
+          <h3>Supervisors</h3>
+          <p>View assigned students, assessments</p>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-user-cog"></i>
+          <h3>Coordinator</h3>
+          <p>Dashboard, matching, reporting</p>
+        </div>
+      </div>
+
+      <p class="footer-text">CSI341 · Introduction to Software Engineering</p>
+    </div>
+  </div>
+
+  <!-- Modal overlay for Login/Signup -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-container" id="modalContainer"></div>
+  </div>
+
+  <script src="welcome.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "assignr1-server",
+  "version": "1.0.0",
+  "description": "IAMS backend for PostgreSQL",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "db:init": "node db/init-db.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "nodemailer": "^6.10.1",
+    "pg": "^8.11.0"
+  }
+}

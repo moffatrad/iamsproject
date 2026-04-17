@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IAMS · Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <!-- HEADER -->
+    <div class="top-bar">
+      <div>
+        <h1>
+          <i class="fas fa-building"></i> IAMS
+          <span class="release-tag">Release 1.0 (MVP)</span>
+        </h1>
+        <p style="color:#3a6a8a; margin-top: 4px;">Industrial Attachment Management System</p>
+      </div>
+      <div class="user-area">
+        <div class="login-badge" id="loginBadge">
+          <i class="fas fa-user-circle"></i> <span id="currentUserDisplay">Loading...</span>
+        </div>
+        <button class="btn-secondary btn-small" id="logoutBtn" style="margin-left: 12px;">
+          <i class="fas fa-sign-out-alt"></i> Logout
+        </button>
+      </div>
+    </div>
+
+    <!-- DASHBOARD GRID -->
+    <div class="dashboard">
+      <!-- MAIN COLUMN -->
+      <div class="main-col">
+        <!-- Coordinator Dashboard Card -->
+        <div class="card" id="coordinatorDashboardCard">
+          <h2><i class="fas fa-chart-pie"></i> Coordinator Dashboard</h2>
+          <div class="stat-box">
+            <div class="stat">
+              <div class="number" id="statStudents">0</div>
+              <div>Students</div>
+            </div>
+            <div class="stat">
+              <div class="number" id="statOrgs">0</div>
+              <div>Organizations</div>
+            </div>
+            <div class="stat">
+              <div class="number" id="statLogbooks">0</div>
+              <div>Logbooks</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="coordinatorPanel">
+          <h2><i class="fas fa-users-cog"></i> Coordinator Controls</h2>
+          <div class="collapsible-section" id="coordStudentsSection">
+            <div class="collapsible-header">
+              <h3>Students & Matches</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <div id="coordStudents"></div>
+            </div>
+          </div>
+          <hr>
+          <div class="collapsible-section" id="coordOrgsSection">
+            <div class="collapsible-header">
+              <h3>Organizations & Matched Students</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <div id="coordOrgs"></div>
+            </div>
+          </div>
+          <hr>
+          <div class="collapsible-section" id="coordLogbooksSection">
+            <div class="collapsible-header">
+              <h3>Student Logbooks</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <div id="coordLogbooks"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile Card -->
+        <div class="card" id="registrationCard">
+          <h2 id="regTitle"><i class="fas fa-user-plus"></i> Profile</h2>
+          <form id="profileForm">
+            <div id="profileFields"></div>
+            <button type="submit" class="btn" id="saveProfileBtn">Save Profile</button>
+          </form>
+          <div id="profileMessage" class="msg"></div>
+        </div>
+
+        <!-- Preferences Card -->
+        <div class="card" id="preferencesCard">
+          <h2><i class="fas fa-sliders-h"></i> <span id="prefTitle">Preferences</span></h2>
+          <form id="prefForm">
+            <div id="prefFields"></div>
+            <button type="submit" class="btn" id="savePrefBtn">Save</button>
+          </form>
+          <div id="prefMessage" class="msg"></div>
+          <div id="recommendationMessage" class="msg"></div>
+        </div>
+
+        <div class="card" id="supervisorStudentsCard">
+          <h2><i class="fas fa-user-graduate"></i> Students Under Supervision</h2>
+          <div id="supervisorStudentsList"></div>
+        </div>
+
+        <div class="card" id="organizationListCard">
+          <h2><i class="fas fa-building"></i> Organizations & Preferences</h2>
+          <div id="organizationList"></div>
+        </div>
+
+        <!-- Logbook Card (student only) -->
+        <div class="card" id="logbookCard">
+          <h2><i class="fas fa-book"></i> Weekly Logbook</h2>
+          <form id="logbookForm">
+            <div class="form-row">
+              <label>Week</label>
+              <select id="logWeek">
+                <option value="1">Week 1</option><option value="2">Week 2</option><option value="3">Week 3</option>
+                <option value="4">Week 4</option><option value="5">Week 5</option><option value="6">Week 6</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Activities & Progress</label>
+              <textarea id="logContent" placeholder="Describe what you worked on..."></textarea>
+            </div>
+            <button type="submit" class="btn">Submit Entry</button>
+          </form>
+          <div id="matchedOrgInfo" class="logbook-meta"></div>
+          <h3 style="margin-top: 20px;">📋 Recent Entries</h3>
+          <div id="logEntriesList"></div>
+        </div>
+      </div>
+
+      <!-- SIDEBAR -->
+      <div class="side-col">
+        <div class="card">
+          <h2><i class="fas fa-id-card"></i> My Profile</h2>
+          <div id="profileSummary">
+            <p><strong id="summaryName">—</strong></p>
+            <p><span id="summaryEmail">—</span></p>
+            <p><span id="summaryRole">—</span></p>
+          </div>
+          <hr>
+          <div id="prefSummary">
+            <strong>Preferences:</strong>
+            <div id="prefTags"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><i class="fas fa-info-circle"></i> Session Info</h2>
+          <p><span id="authStatus">✅ Logged in</span></p>
+          <p style="font-size:0.85rem; margin-top:8px;">Role-based views active</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="dashboard.js"></script>
+</body>
+</html>
