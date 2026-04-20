@@ -4,7 +4,7 @@
   // Backend API configuration
   const API_BASE = window.location.hostname === 'localhost' 
     ? 'http://localhost:3000'
-    : 'https://your-railway-app-name.up.railway.app'; // Will update after deployment
+    : 'https://iamsproject-production.up.railway.app';
 
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContainer = document.getElementById('modalContainer');
