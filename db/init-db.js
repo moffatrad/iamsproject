@@ -4,34 +4,21 @@ const path = require('path');
 const { Client } = require('pg');
 require('dotenv').config();
 
-const pgHost = process.env.PGHOST || 'localhost';
-const pgPort = Number(process.env.PGPORT || 5432);
-const pgUser = process.env.PGUSER || 'postgres';
-const pgPassword = process.env.PGPASSWORD || 'postgres';
-const dbName = process.env.PGDATABASE || 'iams';
-const defaultDb = process.env.PGDEFAULTDB || 'postgres';
-
-async function createDatabase() {
-  const client = new Client({ host: pgHost, port: pgPort, user: pgUser, password: pgPassword, database: defaultDb });
-  try {
-    await client.connect();
-    const exists = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
-    if (exists.rows.length === 0) {
-      console.log(`Creating database ${dbName}...`);
-      await client.query(`CREATE DATABASE ${dbName}`);
-      console.log('Database created.');
-    } else {
-      console.log(`Database ${dbName} already exists.`);
-    }
-  } finally {
-    await client.end();
-  }
-}
+// Support both DATABASE_URL (Railway) and individual env vars (local dev)
+const dbConfig = process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL }
+  : {
+      host: process.env.PGHOST || 'localhost',
+      port: Number(process.env.PGPORT || 5432),
+      user: process.env.PGUSER || 'postgres',
+      password: process.env.PGPASSWORD || 'postgres',
+      database: process.env.PGDATABASE || 'iams'
+    };
 
 async function applySchema() {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const sql = fs.readFileSync(schemaPath, 'utf8');
-  const client = new Client({ host: pgHost, port: pgPort, user: pgUser, password: pgPassword, database: dbName });
+  const client = new Client(dbConfig);
   try {
     await client.connect();
     console.log('Applying schema...');
@@ -43,7 +30,7 @@ async function applySchema() {
 }
 
 async function seedSampleData() {
-  const client = new Client({ host: pgHost, port: pgPort, user: pgUser, password: pgPassword, database: dbName });
+  const client = new Client(dbConfig);
   try {
     await client.connect();
     console.log('Seeding sample users...');
@@ -123,7 +110,6 @@ async function seedSampleData() {
 
 (async () => {
   try {
-    await createDatabase();
     await applySchema();
     await seedSampleData();
     console.log('✅ Database initialization complete.');
