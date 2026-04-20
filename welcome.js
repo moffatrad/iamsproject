@@ -1,6 +1,11 @@
 (function() {
   'use strict';
 
+  // Backend API configuration
+  const API_BASE = window.location.hostname === 'localhost' 
+    ? 'http://localhost:3000'
+    : 'https://your-railway-app-name.up.railway.app'; // Will update after deployment
+
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContainer = document.getElementById('modalContainer');
   const showLoginBtn = document.getElementById('showLoginBtn');
@@ -223,7 +228,7 @@
     }
 
     try {
-      const response = await fetch('/api/forgot-password', {
+      const response = await fetch(`${API_BASE}/api/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -256,7 +261,7 @@
     }
 
     try {
-      const response = await fetch('/api/verify-otp', {
+      const response = await fetch(`${API_BASE}/api/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: pendingEmail, code, role: pendingRole })
@@ -294,7 +299,7 @@
     }
 
     try {
-      const response = await fetch('/api/reset-password', {
+      const response = await fetch(`${API_BASE}/api/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: pendingEmail, code, newPassword: password })
@@ -328,7 +333,7 @@
     if (!payload) return;
 
     try {
-      const response = await fetch(currentMode === 'login' ? '/api/login' : '/api/signup', {
+      const response = await fetch(`${API_BASE}/api/${currentMode === 'login' ? 'login' : 'signup'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

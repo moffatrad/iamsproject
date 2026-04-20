@@ -1,6 +1,11 @@
 (function() {
   'use strict';
 
+  // Backend API configuration
+  const API_BASE = window.location.hostname === 'localhost' 
+    ? 'http://localhost:3000'
+    : 'https://your-railway-app-name.up.railway.app'; // Will update after deployment
+
   const currentRole = localStorage.getItem('iams_user_role');
   const userEmail = localStorage.getItem('iams_user_email');
 
@@ -89,7 +94,7 @@
 
   async function loadUserData() {
     try {
-      const response = await fetch(`/api/me?email=${encodeURIComponent(userEmail)}`);
+      const response = await fetch(`${API_BASE}/api/me?email=${encodeURIComponent(userEmail)}`);
       if (!response.ok) {
         localStorage.clear();
         window.location.href = 'index.html';
@@ -110,7 +115,7 @@
 
   async function fetchStats() {
     try {
-      const response = await fetch('/api/dashboard-stats');
+      const response = await fetch(`${API_BASE}/api/dashboard-stats`);
       if (!response.ok) return;
       stats = await response.json();
     } catch (error) {
@@ -120,9 +125,9 @@
 
   async function loadCoordinatorData() {
     try {
-      const studentsResponse = await fetch('/api/coordinator/students?role=coordinator');
-      const orgsResponse = await fetch('/api/coordinator/organizations?role=coordinator');
-      const logbooksResponse = await fetch('/api/coordinator/student-logbooks?role=coordinator');
+      const studentsResponse = await fetch(`${API_BASE}/api/coordinator/students?role=coordinator`);
+      const orgsResponse = await fetch(`${API_BASE}/api/coordinator/organizations?role=coordinator`);
+      const logbooksResponse = await fetch(`${API_BASE}/api/coordinator/student-logbooks?role=coordinator`);
 
       if (studentsResponse.ok) {
         const students = await studentsResponse.json();
@@ -343,7 +348,7 @@
     }
 
     try {
-      const response = await fetch('/api/profile', {
+      const response = await fetch(`${API_BASE}/api/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail, profile })
@@ -372,7 +377,7 @@
     }
 
     try {
-      const response = await fetch('/api/preferences', {
+      const response = await fetch(`${API_BASE}/api/preferences`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail, preferences })
@@ -397,7 +402,7 @@
     if (!content) return;
 
     try {
-      const response = await fetch('/api/logbooks', {
+      const response = await fetch(`${API_BASE}/api/logbooks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail, week, content })

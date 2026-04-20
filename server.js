@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
@@ -199,6 +200,7 @@ async function matchAllStudents() {
   }
 }
 
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
