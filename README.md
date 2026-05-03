@@ -1,3 +1,10 @@
+Authors:
+•	Goitseone Moothai 201403857
+•	Aobakwe Motingwa 201803690
+•	Thero Setlhare 201804745
+•	Thusang Radingaka 202002221
+•	Rodwell Patrick 201901812
+
 # IAMS — Industrial Attachment Management System
 
 This repository contains a simple full-stack application for managing student industrial attachments, with support for students, organizations, supervisors, and coordinators.
@@ -47,7 +54,7 @@ CREATE DATABASE iams;
 PGHOST=localhost
 PGPORT=5432
 PGUSER=postgres
-PGPASSWORD=Moffat28$$
+PGPASSWORD=""
 PGDATABASE=iams
 PORT=3000
 ```
