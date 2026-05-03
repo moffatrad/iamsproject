@@ -135,27 +135,59 @@
   }
 
   function getOtpFields() {
+    let codeDisplay = '';
+    let codeValue = '';
+    if (displayedOtpCode) {
+      codeDisplay = `
+        <div class="form-group" style="background-color: #e8f4f8; padding: 12px; border-radius: 6px; border: 2px solid #0f3b5e;">
+          <label style="font-weight: bold; color: #0f3b5e;">Your Verification Code:</label>
+          <div style="font-size: 24px; font-weight: bold; color: #0f3b5e; letter-spacing: 2px; text-align: center; margin: 8px 0;">
+            ${displayedOtpCode}
+          </div>
+          <p style="font-size: 12px; color: #555; margin: 8px 0 0 0;">The code has been automatically filled below. Click Verify Code to proceed.</p>
+        </div>
+      `;
+      codeValue = displayedOtpCode;
+    }
+    
     return `
       <div class="form-group">
         <label>Email</label>
         <input type="email" id="otpEmail" value="${pendingEmail}" readonly>
       </div>
+      ${codeDisplay}
       <div class="form-group">
         <label>Verification Code</label>
-        <input type="text" id="otpCode" placeholder="123456" required>
+        <input type="text" id="otpCode" placeholder="123456" value="${codeValue}" required>
       </div>
     `;
   }
 
   function getResetFields() {
+    let codeDisplay = '';
+    let codeValue = '';
+    if (displayedOtpCode) {
+      codeDisplay = `
+        <div class="form-group" style="background-color: #e8f4f8; padding: 12px; border-radius: 6px; border: 2px solid #0f3b5e;">
+          <label style="font-weight: bold; color: #0f3b5e;">Your Reset Code:</label>
+          <div style="font-size: 24px; font-weight: bold; color: #0f3b5e; letter-spacing: 2px; text-align: center; margin: 8px 0;">
+            ${displayedOtpCode}
+          </div>
+          <p style="font-size: 12px; color: #555; margin: 8px 0 0 0;">The code has been automatically filled below. Enter your new password and click Update Password.</p>
+        </div>
+      `;
+      codeValue = displayedOtpCode;
+    }
+    
     return `
       <div class="form-group">
         <label>Email</label>
         <input type="email" id="resetEmail" value="${pendingEmail}" readonly>
       </div>
+      ${codeDisplay}
       <div class="form-group">
         <label>Reset Code</label>
-        <input type="text" id="resetCode" placeholder="123456" required>
+        <input type="text" id="resetCode" placeholder="123456" value="${codeValue}" required>
       </div>
       <div class="form-group">
         <label>New Password</label>
@@ -479,6 +511,25 @@
         e.preventDefault();
         handleAuth();
       });
+    }
+
+    // Auto-fill reset and OTP codes
+    if (currentMode === 'reset' && displayedOtpCode) {
+      setTimeout(() => {
+        const resetCodeInput = document.getElementById('resetCode');
+        if (resetCodeInput) {
+          resetCodeInput.value = displayedOtpCode;
+        }
+      }, 0);
+    }
+
+    if (currentMode === 'otp' && displayedOtpCode) {
+      setTimeout(() => {
+        const otpCodeInput = document.getElementById('otpCode');
+        if (otpCodeInput) {
+          otpCodeInput.value = displayedOtpCode;
+        }
+      }, 0);
     }
   }
 

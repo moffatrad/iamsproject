@@ -41,11 +41,27 @@
   const organizationListDiv = document.getElementById('organizationList');
   const supervisorStudentsCard = document.getElementById('supervisorStudentsCard');
   const supervisorStudentsList = document.getElementById('supervisorStudentsList');
+  const runMatchingBtn = document.getElementById('runMatchingBtn');
+  const matchingMessage = document.getElementById('matchingMessage');
+  const matchingResults = document.getElementById('matchingResults');
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = 'index.html';
   });
+
+  if (runMatchingBtn) {
+    runMatchingBtn.addEventListener('click', runCoordinatorMatching);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
   async function updateUI() {
     if (!currentRole || !userEmail) {
@@ -146,6 +162,68 @@
     }
   }
 
+  async function runCoordinatorMatching() {
+    if (!runMatchingBtn) return;
+
+    runMatchingBtn.disabled = true;
+    matchingMessage.textContent = 'Running matching...';
+
+    try {
+      const response = await fetch(`${API_BASE}/api/coordinator/match-students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: currentRole })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to run matching.');
+
+      matchingMessage.textContent = result.message;
+      renderMatchingResults(result.allocations || []);
+      await loadCoordinatorData();
+      await fetchStats();
+      updateStats();
+    } catch (error) {
+      console.error(error);
+      matchingMessage.textContent = 'Failed to run matching. Check the backend connection and try again.';
+    } finally {
+      runMatchingBtn.disabled = false;
+    }
+  }
+
+  function renderMatchingResults(allocations) {
+    if (!matchingResults) return;
+    if (!allocations.length) {
+      matchingResults.innerHTML = '<p>No students found to match.</p>';
+      return;
+    }
+
+    matchingResults.innerHTML = `
+      <div class="allocation-list">
+        ${allocations.map(allocation => {
+          const studentName = escapeHtml(allocation.student_name || allocation.student_email);
+          const orgName = allocation.organization_name
+            ? escapeHtml(allocation.organization_name)
+            : '<strong>Needs review</strong>';
+          const score = Number(allocation.score || 0);
+          const scoreLabel = score >= 5 ? 'Strong' : score > 0 ? 'Possible' : 'No preference match';
+
+          return `
+            <div class="allocation-row">
+              <div>
+                <strong>${studentName}</strong><br>
+                <span>${escapeHtml(allocation.program || 'No program')} / ${escapeHtml(allocation.project_type || 'No project preference')}</span>
+              </div>
+              <div>
+                ${orgName}<br>
+                <span>${scoreLabel} (${score})</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   function renderCoordinatorStudents(students) {
     if (!students || !students.length) {
       coordStudentsDiv.innerHTML = '<p>No students available yet.</p>';
@@ -153,13 +231,15 @@
     }
 
     coordStudentsDiv.innerHTML = students.map(student => {
-      const matchInfo = student.organization_name ? `Matched to <strong>${student.organization_name}</strong> (${student.organization_email})` : '<strong>No match found yet</strong>';
+      const matchInfo = student.organization_name
+        ? `Matched to <strong>${escapeHtml(student.organization_name)}</strong> (${escapeHtml(student.organization_email)}) - score ${Number(student.score || 0)}`
+        : '<strong>No match found yet</strong>';
       return `
         <div class="log-entry">
-          <strong>${student.name || student.email}</strong><br>
-          Student ID: ${student.student_id || 'N/A'}<br>
-          Program: ${student.program || 'N/A'}<br>
-          Preferences: ${student.location || 'N/A'} / ${student.project_type || 'N/A'}<br>
+          <strong>${escapeHtml(student.name || student.email)}</strong><br>
+          Student ID: ${escapeHtml(student.student_id || 'N/A')}<br>
+          Program: ${escapeHtml(student.program || 'N/A')}<br>
+          Preferences: ${escapeHtml(student.location || 'N/A')} / ${escapeHtml(student.project_type || 'N/A')}<br>
           ${matchInfo}
         </div>
       `;
@@ -173,11 +253,12 @@
     }
 
     coordOrgsDiv.innerHTML = orgs.map(org => {
-      const studentList = org.students && org.students.length ? org.students.join(', ') : 'No matched students yet';
+      const studentList = org.students && org.students.length ? org.students.map(escapeHtml).join(', ') : 'No matched students yet';
       return `
         <div class="log-entry">
-          <strong>${org.name || org.email}</strong><br>
-          Skills: ${org.required_skills || 'N/A'}<br>
+          <strong>${escapeHtml(org.name || org.email)}</strong><br>
+          Location / Project: ${escapeHtml(org.location || 'N/A')} / ${escapeHtml(org.project_type || 'N/A')}<br>
+          Skills: ${escapeHtml(org.required_skills || 'N/A')}<br>
           Students: ${studentList}
         </div>
       `;
@@ -237,7 +318,11 @@
         <div class="form-row"><label>Project Type</label><input type="text" id="prefProjectType" placeholder="e.g. Web Dev, Data Science, AI" value="${preferences.project_type || ''}"></div>
       `;
     } else if (currentRole === 'organization') {
-      prefFields.innerHTML = `<div class="form-row"><label>Required Skills</label><input type="text" id="reqSkills" value="${preferences.required_skills || 'JavaScript, Python'}"></div>`;
+      prefFields.innerHTML = `
+        <div class="form-row"><label>Preferred Location</label><input type="text" id="orgPrefLoc" value="${preferences.location || 'Gaborone'}"></div>
+        <div class="form-row"><label>Project Type</label><input type="text" id="orgProjectType" placeholder="e.g. Web Dev, Data Science, AI" value="${preferences.project_type || ''}"></div>
+        <div class="form-row"><label>Required Skills</label><input type="text" id="reqSkills" value="${preferences.required_skills || 'JavaScript, Python'}"></div>
+      `;
     }
   }
 
@@ -282,7 +367,9 @@
         recommendationMessage.textContent = `Matched to ${currentUser.matchedOrganization.name || currentUser.matchedOrganization.email}.`;
       }
     } else if (currentRole === 'organization') {
-      prefTagsDiv.innerHTML = `<span class="pref-tag">🧰 ${preferences.required_skills || 'JavaScript, Python'}</span>`;
+      prefTagsDiv.innerHTML = `<span class="pref-tag">📍 ${preferences.location || 'Gaborone'}</span>
+                               <span class="pref-tag">💻 ${preferences.project_type || 'Project type'}</span>
+                               <span class="pref-tag">🧰 ${preferences.required_skills || 'JavaScript, Python'}</span>`;
       recommendationMessage.textContent = '';
     } else {
       prefTagsDiv.innerHTML = '<span class="pref-tag">No preferences configured</span>';
@@ -373,6 +460,8 @@
       preferences.location = document.getElementById('prefLoc')?.value.trim();
       preferences.projectType = document.getElementById('prefProjectType')?.value.trim();
     } else if (currentRole === 'organization') {
+      preferences.location = document.getElementById('orgPrefLoc')?.value.trim();
+      preferences.projectType = document.getElementById('orgProjectType')?.value.trim();
       preferences.requiredSkills = document.getElementById('reqSkills')?.value.trim();
     }
 

@@ -121,9 +121,24 @@ function tokenize(text) {
   return normalizeToken(text).split(/[^a-z0-9]+/).filter(Boolean);
 }
 
+function countTokenMatches(sourceText, targetText) {
+  const sourceTokens = tokenize(sourceText);
+  const targetTokens = tokenize(targetText);
+  if (!sourceTokens.length || !targetTokens.length) return 0;
+
+  return sourceTokens.reduce((count, sourceToken) => {
+    const matched = targetTokens.some(targetToken =>
+      sourceToken === targetToken ||
+      sourceToken.includes(targetToken) ||
+      targetToken.includes(sourceToken)
+    );
+    return count + (matched ? 1 : 0);
+  }, 0);
+}
+
 async function findBestOrgMatch(studentId) {
   const studentPrefResult = await pool.query(
-    `SELECT p.location, p.project_type FROM preferences p
+    `SELECT u.program, p.location, p.project_type FROM preferences p
      JOIN users u ON u.id = p.user_id
      WHERE u.id = $1 AND u.role = 'student'`,
     [studentId]
@@ -135,23 +150,21 @@ async function findBestOrgMatch(studentId) {
   }
 
   const orgResult = await pool.query(
-    `SELECT u.id, u.email, u.name, p.required_skills FROM users u
-     JOIN preferences p ON p.user_id = u.id
+    `SELECT u.id, u.email, u.name, u.org_name, u.industry, p.location, p.project_type, p.required_skills
+     FROM users u
+     LEFT JOIN preferences p ON p.user_id = u.id
      WHERE u.role = 'organization'`);
 
-  const projectType = normalizeToken(studentPref.project_type);
-  const location = normalizeToken(studentPref.location);
   const candidates = [];
 
   for (const org of orgResult.rows) {
-    const skills = tokenize(org.required_skills);
     let score = 0;
-    if (projectType) {
-      score += skills.reduce((sum, token) => sum + (token.includes(projectType) ? 1 : 0), 0);
-    }
-    if (location) {
-      score += skills.reduce((sum, token) => sum + (token.includes(location) ? 1 : 0), 0);
-    }
+    score += countTokenMatches(studentPref.project_type, org.required_skills) * 5;
+    score += countTokenMatches(studentPref.project_type, org.project_type) * 4;
+    score += countTokenMatches(studentPref.location, org.location) * 3;
+    score += countTokenMatches(studentPref.program, org.industry) * 2;
+    score += countTokenMatches(studentPref.project_type, org.industry);
+
     if (score > 0) {
       candidates.push({ ...org, score });
     }
@@ -159,11 +172,7 @@ async function findBestOrgMatch(studentId) {
 
   if (candidates.length === 0) {
     const recommendations = orgResult.rows
-      .map(org => {
-        const skills = tokenize(org.required_skills);
-        const score = skills.reduce((sum, token) => sum + (token.includes(projectType) ? 1 : 0), 0);
-        return { ...org, score };
-      })
+      .map(org => ({ ...org, score: 0 }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 2);
     return { match: null, recommendations };
@@ -195,9 +204,25 @@ async function updateStudentMatch(studentId) {
 
 async function matchAllStudents() {
   const students = await pool.query("SELECT id FROM users WHERE role = 'student'");
+  const summary = {
+    totalStudents: students.rows.length,
+    matched: 0,
+    unmatched: 0,
+    allocations: []
+  };
+
   for (const student of students.rows) {
-    await updateStudentMatch(student.id);
+    const match = await updateStudentMatch(student.id);
+    if (match) {
+      summary.matched += 1;
+      summary.allocations.push({ studentId: student.id, organizationId: match.id, score: match.score });
+    } else {
+      summary.unmatched += 1;
+      summary.allocations.push({ studentId: student.id, organizationId: null, score: 0 });
+    }
   }
+
+  return summary;
 }
 
 app.use(cors());
@@ -344,10 +369,10 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 
     const otpCode = await sendOtpEmail(email, 'reset');
-    const responsePayload = { message: 'If this email is registered, a password reset code has been sent.' };
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      responsePayload.otpCode = otpCode;
-    }
+    const responsePayload = { 
+      message: 'If this email is registered, a password reset code has been sent.',
+      otpCode: otpCode
+    };
     res.json(responsePayload);
   } catch (error) {
     handleError(res, error);
@@ -394,7 +419,7 @@ app.get('/api/me', async (req, res) => {
     const prefResult = await pool.query('SELECT * FROM preferences WHERE user_id = $1', [user.id]);
     const logResult = await pool.query('SELECT week, content, created_at FROM logbooks WHERE user_id = $1 ORDER BY created_at DESC', [user.id]);
     const matchResult = await pool.query(
-      `SELECT m.score, u.email AS org_email, u.name AS org_name FROM matches m
+      `SELECT m.score, u.email AS org_email, COALESCE(u.org_name, u.name) AS org_name FROM matches m
        JOIN users u ON u.id = m.organization_id
        WHERE m.student_id = $1`,
       [user.id]
@@ -411,7 +436,7 @@ app.get('/api/me', async (req, res) => {
         recommendations = matchInfo.recommendations;
       }
       const orgsResult = await pool.query(
-        `SELECT u.email, u.name, u.org_name, p.required_skills
+        `SELECT u.email, u.name, u.org_name, p.location, p.project_type, p.required_skills
          FROM users u
          LEFT JOIN preferences p ON p.user_id = u.id
          WHERE u.role = 'organization'`
@@ -420,6 +445,8 @@ app.get('/api/me', async (req, res) => {
         email: row.email,
         name: row.name,
         orgName: row.org_name,
+        location: row.location,
+        projectType: row.project_type,
         requiredSkills: row.required_skills
       }));
     }
@@ -427,7 +454,7 @@ app.get('/api/me', async (req, res) => {
     let supervisorStudents = [];
     if (user.role === 'supervisor' && user.supervisor_dept) {
       const supervisorResult = await pool.query(
-        `SELECT u.email, u.name, u.student_id, u.program, p.location, p.project_type, m.score, ou.email AS org_email, ou.name AS org_name
+        `SELECT u.email, u.name, u.student_id, u.program, p.location, p.project_type, m.score, ou.email AS org_email, COALESCE(ou.org_name, ou.name) AS org_name
          FROM users u
          LEFT JOIN preferences p ON p.user_id = u.id
          LEFT JOIN matches m ON m.student_id = u.id
@@ -491,7 +518,7 @@ app.get('/api/coordinator/students', async (req, res) => {
 
     const result = await pool.query(
       `SELECT u.email, u.name, u.student_id, u.program, p.location, p.project_type,
-              m.score, ou.email AS organization_email, ou.name AS organization_name
+              m.score, ou.email AS organization_email, COALESCE(ou.org_name, ou.name) AS organization_name
        FROM users u
        LEFT JOIN preferences p ON p.user_id = u.id
        LEFT JOIN matches m ON m.student_id = u.id
@@ -499,6 +526,36 @@ app.get('/api/coordinator/students', async (req, res) => {
        WHERE u.role = 'student'`
     );
     res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/coordinator/match-students', async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can run student-organization matching.' });
+    }
+
+    const summary = await matchAllStudents();
+    const result = await pool.query(
+      `SELECT u.email AS student_email, u.name AS student_name, u.student_id, u.program,
+              p.location, p.project_type, m.score,
+              ou.email AS organization_email, COALESCE(ou.org_name, ou.name) AS organization_name
+       FROM users u
+       LEFT JOIN preferences p ON p.user_id = u.id
+       LEFT JOIN matches m ON m.student_id = u.id
+       LEFT JOIN users ou ON ou.id = m.organization_id
+       WHERE u.role = 'student'
+       ORDER BY u.name NULLS LAST, u.email`
+    );
+
+    res.json({
+      message: `Matching complete. ${summary.matched} of ${summary.totalStudents} students matched.`,
+      summary,
+      allocations: result.rows
+    });
   } catch (error) {
     handleError(res, error);
   }
@@ -512,14 +569,14 @@ app.get('/api/coordinator/organizations', async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT u.email, u.name, p.required_skills,
+      `SELECT u.email, COALESCE(u.org_name, u.name) AS name, p.location, p.project_type, p.required_skills,
               ARRAY_REMOVE(ARRAY_AGG(su.name) FILTER (WHERE su.name IS NOT NULL), NULL) AS students
        FROM users u
        LEFT JOIN preferences p ON p.user_id = u.id
        LEFT JOIN matches m ON m.organization_id = u.id
        LEFT JOIN users su ON su.id = m.student_id
        WHERE u.role = 'organization'
-       GROUP BY u.id, p.required_skills`
+       GROUP BY u.id, p.location, p.project_type, p.required_skills`
     );
     res.json(result.rows);
   } catch (error) {
