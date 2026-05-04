@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "mock": "node server-mock.js",
     "db:init": "node db/init-db.js"
   },
   "dependencies": {

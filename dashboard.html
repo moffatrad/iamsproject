@@ -32,6 +32,13 @@
     <div class="dashboard">
       <!-- MAIN COLUMN -->
       <div class="main-col">
+        <!-- Notifications Card -->
+        <div class="card" id="notificationsCard">
+          <h2><i class="fas fa-bell"></i> Notifications & Deadlines</h2>
+          <div id="deadlinesList" style="margin-bottom: 16px;"></div>
+          <div id="notificationsList"></div>
+        </div>
+
         <!-- Coordinator Dashboard Card -->
         <div class="card" id="coordinatorDashboardCard">
           <h2><i class="fas fa-chart-pie"></i> Coordinator Dashboard</h2>
@@ -92,6 +99,106 @@
               <div id="coordLogbooks"></div>
             </div>
           </div>
+          <hr>
+          <div class="collapsible-section" id="coordFinalReportsSection">
+            <div class="collapsible-header">
+              <h3>Final Reports Submitted</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <div id="coordFinalReports"></div>
+            </div>
+          </div>
+          <hr>
+          <hr>
+          <div class="collapsible-section" id="coordRemindersSection">
+            <div class="collapsible-header">
+              <h3>Send Submission Reminders</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <p>Send email and in-app reminders to all students about upcoming submission deadlines.</p>
+              <button class="btn" id="sendRemindersBtn" type="button"><i class="fas fa-paper-plane"></i> Send Reminders to All Students</button>
+              <div id="remindersMessage" class="msg"></div>
+            </div>
+          </div>
+          <hr>
+          <div class="collapsible-section" id="coordDataExportSection">
+            <div class="collapsible-header">
+              <h3>Security & Backups</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <p>Export and backup departmental records with security options.</p>
+              <div style="margin: 15px 0;">
+                <label style="display: block; margin-bottom: 10px;">
+                  <strong>Select data to export/backup:</strong>
+                </label>
+                <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+                  <label><input type="checkbox" name="exportData" value="students" checked> Students</label>
+                  <label><input type="checkbox" name="exportData" value="organizations" checked> Organizations</label>
+                  <label><input type="checkbox" name="exportData" value="logbooks" checked> Logbooks</label>
+                  <label><input type="checkbox" name="exportData" value="assessments" checked> Assessments</label>
+                  <label><input type="checkbox" name="exportData" value="finalreports" checked> Final Reports</label>
+                  <label><input type="checkbox" name="exportData" value="matches" checked> Student-Org Matches</label>
+                </div>
+                <div style="margin-bottom: 15px;">
+                  <label style="display: block; margin-bottom: 5px;">
+                    <input type="checkbox" id="encryptExport" checked> Encrypt exported data
+                  </label>
+                  <small style="color: #666;">Encrypted files require a password to access</small>
+                </div>
+                <div style="margin-bottom: 15px;">
+                  <label style="display: block; margin-bottom: 5px;">
+                    <input type="checkbox" id="createBackup" checked> Create timestamped backup
+                  </label>
+                  <small style="color: #666;">Creates a dated backup file for archival purposes</small>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn" id="exportDataBtn" type="button"><i class="fas fa-download"></i> Export Data</button>
+                <button class="btn" id="createBackupBtn" type="button"><i class="fas fa-shield-alt"></i> Create Secure Backup</button>
+                <button class="btn" id="viewBackupsBtn" type="button"><i class="fas fa-history"></i> View Backup History</button>
+              </div>
+              <div id="exportMessage" class="msg"></div>
+              <div id="backupHistory" style="margin-top: 15px; display: none;">
+                <h4>Recent Backups</h4>
+                <div id="backupList"></div>
+              </div>
+            </div>
+          </div>
+          <hr>
+          <div class="collapsible-section" id="coordRegistrationsSection">
+            <div class="collapsible-header">
+              <h3>All Registrations</h3>
+              <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+            </div>
+            <div class="collapsible-body">
+              <div class="registration-controls">
+                <label>Search:
+                  <input type="search" id="registrationSearch" placeholder="Search users by name, email or role" />
+                </label>
+                <label>Role:
+                  <select id="registrationRoleFilter">
+                    <option value="all">All</option>
+                    <option value="student">Students</option>
+                    <option value="organization">Organizations</option>
+                    <option value="supervisor">Supervisors</option>
+                    <option value="coordinator">Coordinators</option>
+                  </select>
+                </label>
+                <label>Sort by:
+                  <select id="registrationSortOrder">
+                    <option value="name_asc">Name ▲</option>
+                    <option value="name_desc">Name ▼</option>
+                    <option value="role_asc">Role ▲</option>
+                    <option value="role_desc">Role ▼</option>
+                  </select>
+                </label>
+              </div>
+              <div id="coordRegistrations"></div>
+            </div>
+          </div>
         </div>
 
         <!-- Profile Card -->
@@ -115,9 +222,76 @@
           <div id="recommendationMessage" class="msg"></div>
         </div>
 
-        <div class="card" id="supervisorStudentsCard">
-          <h2><i class="fas fa-user-graduate"></i> Students Under Supervision</h2>
-          <div id="supervisorStudentsList"></div>
+        <div class="card collapsible-section" id="supervisorStudentsCard">
+          <div class="collapsible-header">
+            <h2><i class="fas fa-user-graduate"></i> Students Under Supervision</h2>
+            <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+          </div>
+          <div class="collapsible-body">
+            <div id="supervisorStudentsList"></div>
+          </div>
+        </div>
+
+        <div class="card collapsible-section" id="supervisorLogbooksCard">
+          <div class="collapsible-header">
+            <h2><i class="fas fa-check-circle"></i> Supervised Student Logbooks</h2>
+            <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+          </div>
+          <div class="collapsible-body">
+            <p class="msg">Approve weekly logbooks and submit student assessments to the coordinator dashboard.</p>
+            <div id="supervisorLogbooksList"></div>
+          </div>
+        </div>
+
+        <div class="card collapsible-section" id="supervisorSiteVisitCard">
+          <div class="collapsible-header">
+            <h2><i class="fas fa-clipboard-check"></i> Site Visit Assessments</h2>
+            <button class="collapse-toggle" aria-expanded="true" type="button"><i class="fas fa-angle-down"></i></button>
+          </div>
+          <div class="collapsible-body">
+            <p class="msg">Submit a structured site visit assessment form to capture student progress during visits.</p>
+            <form id="siteVisitForm">
+              <div class="form-row">
+                <label>Student</label>
+                <select id="siteVisitStudent"></select>
+              </div>
+              <div class="form-row">
+                <label>Visit Date</label>
+                <input type="date" id="siteVisitDate" />
+              </div>
+              <div class="form-row">
+                <label>Visit Location</label>
+                <input type="text" id="siteVisitLocation" placeholder="e.g. Company site or lab" />
+              </div>
+              <div class="form-row">
+                <label>Progress Summary</label>
+                <textarea id="siteVisitProgress" placeholder="Describe student progress observed during the visit."></textarea>
+              </div>
+              <div class="form-row">
+                <label>Key Challenges</label>
+                <textarea id="siteVisitChallenges" placeholder="Describe any issues or support needs."></textarea>
+              </div>
+              <div class="form-row">
+                <label>Overall Rating</label>
+                <select id="siteVisitRating">
+                  <option value="">Select rating</option>
+                  <option value="1">1 - Poor</option>
+                  <option value="2">2 - Needs Improvement</option>
+                  <option value="3">3 - Satisfactory</option>
+                  <option value="4">4 - Good</option>
+                  <option value="5">5 - Excellent</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label>Additional Comments</label>
+                <textarea id="siteVisitComments" placeholder="Any extra observations or recommendations."></textarea>
+              </div>
+              <button type="submit" class="btn">Submit Site Visit Assessment</button>
+            </form>
+            <div id="siteVisitMessage" class="msg"></div>
+            <h3 style="margin-top: 20px;">Recent Site Visit Assessments</h3>
+            <div id="siteVisitHistory"></div>
+          </div>
         </div>
 
         <div class="card" id="organizationListCard">
@@ -145,6 +319,29 @@
           <div id="matchedOrgInfo" class="logbook-meta"></div>
           <h3 style="margin-top: 20px;">📋 Recent Entries</h3>
           <div id="logEntriesList"></div>
+        </div>
+
+        <div class="card" id="finalReportCard">
+          <h2><i class="fas fa-file-alt"></i> Final Report Submission</h2>
+          <form id="finalReportForm">
+            <div class="form-row">
+              <label>Report Title</label>
+              <input type="text" id="finalReportTitle" placeholder="Enter a title for your final report" />
+            </div>
+            <div class="form-row">
+              <label>Report Content</label>
+              <textarea id="finalReportContent" placeholder="Paste your final report text here..."></textarea>
+            </div>
+            <button type="submit" class="btn">Submit Final Report</button>
+          </form>
+          <div id="finalReportMessage" class="msg"></div>
+        </div>
+
+        <!-- Assessment Results Card (student only) -->
+        <div class="card" id="assessmentResultsCard">
+          <h2><i class="fas fa-chart-line"></i> Assessment Results</h2>
+          <p class="msg">View your supervisor's ratings and feedback for your weekly logbooks.</p>
+          <div id="assessmentResultsList"></div>
         </div>
       </div>
 

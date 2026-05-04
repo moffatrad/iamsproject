@@ -22,8 +22,53 @@ const poolConfig = process.env.DATABASE_URL
 const pool = new Pool(poolConfig);
 
 pool.connect()
-  .then(client => {
+  .then(async client => {
     console.log('✅ Connected to PostgreSQL');
+    try {
+      await client.query(`ALTER TABLE IF EXISTS logbooks ADD COLUMN IF NOT EXISTS supervisor_approved BOOLEAN NOT NULL DEFAULT FALSE`);
+      await client.query(`ALTER TABLE IF EXISTS logbooks ADD COLUMN IF NOT EXISTS submitted_to_coordinator BOOLEAN NOT NULL DEFAULT FALSE`);
+      await client.query(`ALTER TABLE IF EXISTS logbooks ADD COLUMN IF NOT EXISTS supervisor_rating INTEGER`);
+      await client.query(`ALTER TABLE IF EXISTS logbooks ADD COLUMN IF NOT EXISTS supervisor_comments TEXT`);
+      await client.query(`CREATE TABLE IF NOT EXISTS final_reports (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id)
+      )`);
+      await client.query(`CREATE TABLE IF NOT EXISTS site_visit_assessments (
+        id SERIAL PRIMARY KEY,
+        supervisor_email TEXT NOT NULL,
+        student_email TEXT NOT NULL,
+        student_name TEXT,
+        visit_date DATE NOT NULL,
+        visit_location TEXT,
+        progress_summary TEXT NOT NULL,
+        challenges TEXT,
+        overall_rating INTEGER NOT NULL,
+        comments TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+      await client.query(`CREATE TABLE IF NOT EXISTS submission_deadlines (
+        id SERIAL PRIMARY KEY,
+        deadline_type TEXT NOT NULL,
+        deadline_date TIMESTAMPTZ NOT NULL,
+        description TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`);
+      await client.query(`CREATE TABLE IF NOT EXISTS reminder_log (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        deadline_type TEXT NOT NULL,
+        reminder_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        days_before INTEGER,
+        UNIQUE (user_id, deadline_type, days_before)
+      )`);
+      console.log('✅ Logbook approval and assessment schema ensured.');
+    } catch (schemaError) {
+      console.error('⚠️ Logbook schema check failed:', schemaError.message || schemaError);
+    }
     client.release();
   })
   .catch(error => {
@@ -252,6 +297,7 @@ app.post('/api/signup', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const savedName = profile?.name || (role === 'organization' ? profile?.orgName : null);
     const insertUserText = `
       INSERT INTO users (email, password, role, name, student_id, program, org_name, industry, supervisor_dept)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -261,7 +307,7 @@ app.post('/api/signup', async (req, res) => {
       email,
       hashedPassword,
       role,
-      profile?.name || null,
+      savedName,
       profile?.studentId || null,
       profile?.program || null,
       profile?.orgName || null,
@@ -281,12 +327,29 @@ app.post('/api/signup', async (req, res) => {
     }
 
     if (role === 'student') {
-      await updateStudentMatch(userId);
+      try {
+        await updateStudentMatch(userId);
+      } catch (matchError) {
+        console.warn('Student match update failed after signup:', matchError.message || matchError);
+      }
     } else if (role === 'organization') {
-      await matchAllStudents();
+      try {
+        await matchAllStudents();
+      } catch (matchError) {
+        console.warn('Organization signup matching failed after signup:', matchError.message || matchError);
+      }
     }
 
-    res.status(201).json({ message: 'Account created.', email, role, name: profile?.name || null });
+    const savedProfile = {
+      name: savedName,
+      studentId: profile?.studentId || null,
+      program: profile?.program || null,
+      orgName: profile?.orgName || null,
+      industry: profile?.industry || null,
+      supervisorDept: profile?.supervisorDept || null
+    };
+
+    res.status(201).json({ message: 'Account created.', email, role, profile: savedProfile });
   } catch (error) {
     handleError(res, error);
   }
@@ -426,6 +489,8 @@ app.get('/api/me', async (req, res) => {
     );
 
     const preferences = prefResult.rows[0] || null;
+    const finalReportResult = await pool.query('SELECT title, content, submitted_at FROM final_reports WHERE user_id = $1', [user.id]);
+    const finalReport = finalReportResult.rows[0] || null;
     const match = matchResult.rows[0] || null;
     let recommendations = [];
     let organizations = [];
@@ -483,11 +548,575 @@ app.get('/api/me', async (req, res) => {
       supervisorDept: user.supervisor_dept,
       preferences,
       logbooks: logResult.rows,
+      finalReport,
       matchedOrganization: match ? { email: match.org_email, name: match.org_name, score: match.score } : null,
       recommendations,
       organizations,
       supervisorStudents
     });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/final-reports', async (req, res) => {
+  try {
+    const { email, title, content } = req.body;
+    if (!email || !title || !content) {
+      return res.status(400).json({ error: 'Email, title, and content are required.' });
+    }
+
+    const userResult = await pool.query('SELECT id, role FROM users WHERE email = $1', [email]);
+    const user = userResult.rows[0];
+    if (!user || user.role !== 'student') {
+      return res.status(403).json({ error: 'Only students can submit final reports.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO final_reports (user_id, title, content)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE
+       SET title = EXCLUDED.title,
+           content = EXCLUDED.content,
+           submitted_at = NOW()
+       RETURNING id, title, content, submitted_at`,
+      [user.id, title, content]
+    );
+
+    res.json({ message: 'Final report submitted successfully.', report: result.rows[0] });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/final-reports', async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const userResult = await pool.query('SELECT id, role FROM users WHERE email = $1', [email]);
+    const user = userResult.rows[0];
+    if (!user || user.role !== 'student') {
+      return res.status(403).json({ error: 'Only students can load final reports.' });
+    }
+
+    const reportResult = await pool.query('SELECT title, content, submitted_at FROM final_reports WHERE user_id = $1', [user.id]);
+    res.json(reportResult.rows[0] || null);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/coordinator/final-reports', async (req, res) => {
+  try {
+    const role = req.query.role;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can access this endpoint.' });
+    }
+
+    const result = await pool.query(
+      `SELECT u.name AS student_name, u.email AS student_email, fr.title, fr.content, fr.submitted_at
+       FROM final_reports fr
+       JOIN users u ON u.id = fr.user_id
+       WHERE u.role = 'student'
+       ORDER BY fr.submitted_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/coordinator/send-deadline-reminders', async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can send reminders.' });
+    }
+
+    const studentResult = await pool.query("SELECT id, email, name FROM users WHERE role = 'student'");
+    let remindersSent = 0;
+
+    for (const student of studentResult.rows) {
+      const message = 'Reminder: Please submit your weekly logbook and final report before the deadline.';
+      
+      await pool.query(
+        `INSERT INTO notifications (user_id, message) VALUES ($1, $2)`,
+        [student.id, message]
+      );
+
+      await sendEmail(
+        student.email,
+        'IAMS Submission Reminder',
+        `Dear ${student.name || 'Student'},\n\nThis is a reminder to submit your weekly logbook and final report before the deadline.\n\nPlease visit the IAMS dashboard to complete your submissions.\n\nBest regards,\nIAMS Team`
+      );
+
+      remindersSent++;
+    }
+
+    res.json({ message: `Reminders sent to ${remindersSent} students.`, remindersSent });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/coordinator/export-data', async (req, res) => {
+  try {
+    const { dataTypes, role, encrypt = false, createBackup = false } = req.body;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can export data.' });
+    }
+
+    if (!dataTypes || !Array.isArray(dataTypes) || dataTypes.length === 0) {
+      return res.status(400).json({ error: 'No data types specified for export.' });
+    }
+
+    const exportData = {};
+
+    // Export Students
+    if (dataTypes.includes('students')) {
+      const studentsResult = await pool.query(
+        `SELECT id, email, name, student_id, program, role FROM users WHERE role = 'student' ORDER BY name`
+      );
+      exportData.students = studentsResult.rows;
+    }
+
+    // Export Organizations
+    if (dataTypes.includes('organizations')) {
+      const orgsResult = await pool.query(
+        `SELECT id, org_name AS name, email, industry AS location, supervisor_dept FROM users WHERE role = 'organization' ORDER BY org_name`
+      );
+      exportData.organizations = orgsResult.rows;
+    }
+
+    // Export Logbooks
+    if (dataTypes.includes('logbooks')) {
+      const logbooksResult = await pool.query(
+        `SELECT l.id, l.user_id, u.name as student_name, u.email, l.week, l.content, 
+                l.supervisor_rating, l.supervisor_comments, l.supervisor_approved AS approved, l.created_at
+         FROM logbooks l
+         JOIN users u ON l.user_id = u.id
+         ORDER BY u.name, l.week`
+      );
+      exportData.logbooks = logbooksResult.rows;
+    }
+
+    // Export Assessments
+    if (dataTypes.includes('assessments')) {
+      const assessmentsResult = await pool.query(
+        `SELECT l.id, u.name as student_name, u.email, l.week, l.supervisor_rating, 
+                l.supervisor_comments, l.created_at
+         FROM logbooks l
+         JOIN users u ON l.user_id = u.id
+         WHERE l.supervisor_rating IS NOT NULL
+         ORDER BY u.name, l.week`
+      );
+      exportData.assessments = assessmentsResult.rows;
+    }
+
+    // Export Final Reports
+    if (dataTypes.includes('finalreports')) {
+      const reportsResult = await pool.query(
+        `SELECT f.id, u.name as student_name, u.email, f.title, f.content, f.submitted_at
+         FROM final_reports f
+         JOIN users u ON f.user_id = u.id
+         ORDER BY u.name`
+      );
+      exportData.finalReports = reportsResult.rows;
+    }
+
+    // Export Student-Organization Matches
+    if (dataTypes.includes('matches')) {
+      const matchesResult = await pool.query(
+        `SELECT m.id, s.name as student_name, s.email as student_email, 
+                o.name as organization_name, o.email as organization_email, 
+                m.score, m.organization_id, m.student_id, m.created_at
+         FROM matches m
+         JOIN users s ON m.student_id = s.id
+         JOIN users o ON m.organization_id = o.id
+         ORDER BY s.name, o.name`
+      );
+      exportData.matches = matchesResult.rows;
+    }
+
+    // Add metadata
+    exportData.metadata = {
+      exportDate: new Date().toISOString(),
+      dataTypesExported: dataTypes,
+      recordCount: Object.keys(exportData).reduce((sum, key) => {
+        if (key !== 'metadata' && Array.isArray(exportData[key])) {
+          return sum + exportData[key].length;
+        }
+        return sum;
+      }, 0)
+    };
+
+    let responseData = exportData;
+    let contentType = 'application/json';
+
+    // Encrypt data if requested
+    if (encrypt) {
+      const algorithm = 'aes-256-cbc';
+      const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'default-key-change-in-production', 'salt', 32);
+      const iv = crypto.randomBytes(16);
+      
+      const cipher = crypto.createCipheriv(algorithm, key, iv);
+      let encrypted = cipher.update(JSON.stringify(exportData), 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      
+      responseData = {
+        encrypted: true,
+        data: encrypted,
+        iv: iv.toString('hex'),
+        algorithm: algorithm
+      };
+      contentType = 'application/octet-stream';
+    }
+
+    // Create backup record if requested
+    if (createBackup) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `iams-backup-${timestamp}.json${encrypt ? '.enc' : ''}`;
+      const sizeBytes = Buffer.byteLength(JSON.stringify(responseData), 'utf8');
+      
+      // Get coordinator user ID (assuming we have it from session or token)
+      // For now, we'll use a placeholder - in production this should come from authentication
+      const coordinatorId = 1; // TODO: Get from authenticated user
+      
+      await pool.query(
+        `INSERT INTO backups (filename, data_types, encrypted, size_bytes, created_by) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [filename, dataTypes, encrypt, sizeBytes, coordinatorId]
+      );
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.json(responseData);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+// Create secure backup endpoint
+app.post('/api/coordinator/create-backup', async (req, res) => {
+  try {
+    const { dataTypes, role } = req.body;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can create backups.' });
+    }
+
+    if (!dataTypes || !Array.isArray(dataTypes) || dataTypes.length === 0) {
+      return res.status(400).json({ error: 'No data types specified for backup.' });
+    }
+
+    // Get coordinator user ID (placeholder - should come from authentication)
+    const coordinatorId = 1; // TODO: Get from authenticated user
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `iams-backup-${timestamp}.json.enc`;
+
+    // Create the backup data (similar to export but always encrypted)
+    const exportData = {};
+
+    // Add all the data collection logic here (same as export endpoint)
+    if (dataTypes.includes('students')) {
+      const studentsResult = await pool.query(
+        `SELECT id, email, name, student_id, program, role FROM users WHERE role = 'student' ORDER BY name`
+      );
+      exportData.students = studentsResult.rows;
+    }
+
+    if (dataTypes.includes('organizations')) {
+      const orgsResult = await pool.query(
+        `SELECT id, org_name AS name, email, industry AS location, supervisor_dept FROM users WHERE role = 'organization' ORDER BY org_name`
+      );
+      exportData.organizations = orgsResult.rows;
+    }
+
+    if (dataTypes.includes('logbooks')) {
+      const logbooksResult = await pool.query(
+        `SELECT l.id, l.user_id, u.name as student_name, u.email, l.week, l.content, 
+                l.supervisor_rating, l.supervisor_comments, l.supervisor_approved AS approved, l.created_at
+         FROM logbooks l
+         JOIN users u ON l.user_id = u.id
+         ORDER BY u.name, l.week`
+      );
+      exportData.logbooks = logbooksResult.rows;
+    }
+
+    if (dataTypes.includes('assessments')) {
+      const assessmentsResult = await pool.query(
+        `SELECT l.id, u.name as student_name, u.email, l.week, l.supervisor_rating, 
+                l.supervisor_comments, l.created_at
+         FROM logbooks l
+         JOIN users u ON l.user_id = u.id
+         WHERE l.supervisor_rating IS NOT NULL
+         ORDER BY u.name, l.week`
+      );
+      exportData.assessments = assessmentsResult.rows;
+    }
+
+    if (dataTypes.includes('finalreports')) {
+      const reportsResult = await pool.query(
+        `SELECT f.id, u.name as student_name, u.email, f.title, f.content, f.submitted_at
+         FROM final_reports f
+         JOIN users u ON f.user_id = u.id
+         ORDER BY u.name`
+      );
+      exportData.finalReports = reportsResult.rows;
+    }
+
+    if (dataTypes.includes('matches')) {
+      const matchesResult = await pool.query(
+        `SELECT m.id, s.name as student_name, s.email as student_email, 
+                o.name as organization_name, o.email as organization_email, 
+                m.score, m.organization_id, m.student_id, m.created_at
+         FROM matches m
+         JOIN users s ON m.student_id = s.id
+         JOIN users o ON m.organization_id = o.id
+         ORDER BY s.name, o.name`
+      );
+      exportData.matches = matchesResult.rows;
+    }
+
+    // Add metadata
+    exportData.metadata = {
+      exportDate: new Date().toISOString(),
+      dataTypesExported: dataTypes,
+      recordCount: Object.keys(exportData).reduce((sum, key) => {
+        if (key !== 'metadata' && Array.isArray(exportData[key])) {
+          return sum + exportData[key].length;
+        }
+        return sum;
+      }, 0)
+    };
+
+    // Encrypt the data
+    const algorithm = 'aes-256-cbc';
+    const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'default-key-change-in-production', 'salt', 32);
+    const iv = crypto.randomBytes(16);
+    
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    let encrypted = cipher.update(JSON.stringify(exportData), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const encryptedData = {
+      encrypted: true,
+      data: encrypted,
+      iv: iv.toString('hex'),
+      algorithm: algorithm
+    };
+
+    // Store backup metadata in database
+    const sizeBytes = Buffer.byteLength(JSON.stringify(encryptedData), 'utf8');
+    const backupResult = await pool.query(
+      `INSERT INTO backups (filename, data_types, encrypted, size_bytes, created_by) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [filename, dataTypes, true, sizeBytes, coordinatorId]
+    );
+
+    // In a real implementation, you'd store the encrypted data in a secure location
+    // For now, we'll just return the backup ID
+    res.json({ 
+      success: true, 
+      backupId: backupResult.rows[0].id,
+      filename: filename,
+      message: 'Secure backup created successfully'
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+// Get backup history endpoint
+app.get('/api/coordinator/backup-history', async (req, res) => {
+  try {
+    // TODO: Get coordinator ID from authentication
+    const coordinatorId = 1; // Placeholder
+
+    const backupsResult = await pool.query(
+      `SELECT b.id, b.filename, b.data_types, b.encrypted, b.size_bytes, b.created_at, u.name as created_by_name
+       FROM backups b
+       JOIN users u ON b.created_by = u.id
+       WHERE b.created_by = $1
+       ORDER BY b.created_at DESC
+       LIMIT 50`,
+      [coordinatorId]
+    );
+
+    res.json(backupsResult.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+// Download backup endpoint
+app.get('/api/coordinator/download-backup/:backupId', async (req, res) => {
+  try {
+    const { backupId } = req.params;
+    
+    // TODO: Get coordinator ID from authentication and verify ownership
+    const coordinatorId = 1; // Placeholder
+
+    const backupResult = await pool.query(
+      `SELECT * FROM backups WHERE id = $1 AND created_by = $2`,
+      [backupId, coordinatorId]
+    );
+
+    if (backupResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Backup not found.' });
+    }
+
+    const backup = backupResult.rows[0];
+
+    // In a real implementation, you'd retrieve the encrypted data from secure storage
+    // For now, we'll recreate the backup data (this is not secure for production!)
+    const exportData = {};
+
+    // Recreate the data based on stored data_types
+    if (backup.data_types.includes('students')) {
+      const studentsResult = await pool.query(
+        `SELECT id, email, name, student_id, program, role FROM users WHERE role = 'student' ORDER BY name`
+      );
+      exportData.students = studentsResult.rows;
+    }
+
+    // Add other data types as needed...
+
+    // Add metadata
+    exportData.metadata = {
+      exportDate: backup.created_at.toISOString(),
+      dataTypesExported: backup.data_types,
+      backupId: backup.id
+    };
+
+    // Encrypt the data
+    const algorithm = 'aes-256-cbc';
+    const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'default-key-change-in-production', 'salt', 32);
+    const iv = crypto.randomBytes(16);
+    
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    let encrypted = cipher.update(JSON.stringify(exportData), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const encryptedData = {
+      encrypted: true,
+      data: encrypted,
+      iv: iv.toString('hex'),
+      algorithm: algorithm
+    };
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${backup.filename}"`);
+    res.json(encryptedData);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    const user = userResult.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, message, is_read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/notifications/mark-read', async (req, res) => {
+  try {
+    const { email, notificationId } = req.body;
+    if (!email || !notificationId) {
+      return res.status(400).json({ error: 'Email and notificationId are required.' });
+    }
+
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    const user = userResult.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    await pool.query(
+      `UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2`,
+      [notificationId, user.id]
+    );
+
+    res.json({ message: 'Notification marked as read.' });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/upcoming-deadlines', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT deadline_type, deadline_date, description FROM submission_deadlines WHERE deadline_date > NOW() ORDER BY deadline_date ASC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/coordinator/set-deadline', async (req, res) => {
+  try {
+    const { role, deadline_type, deadline_date, description } = req.body;
+    if (role !== 'coordinator') {
+      return res.status(403).json({ error: 'Only coordinators can set deadlines.' });
+    }
+    if (!deadline_type || !deadline_date || !description) {
+      return res.status(400).json({ error: 'deadline_type, deadline_date, and description are required.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO submission_deadlines (deadline_type, deadline_date, description) VALUES ($1, $2, $3) RETURNING *`,
+      [deadline_type, deadline_date, description]
+    );
+
+    res.json({ message: 'Deadline created successfully.', deadline: result.rows[0] });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/student/assessment-results', async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const userResult = await pool.query('SELECT id, role FROM users WHERE email = $1', [email]);
+    const user = userResult.rows[0];
+    if (!user || user.role !== 'student') {
+      return res.status(403).json({ error: 'Only students can view assessment results.' });
+    }
+
+    const result = await pool.query(
+      `SELECT l.week, l.content, l.supervisor_rating, l.supervisor_comments, l.created_at
+       FROM logbooks l
+       WHERE l.user_id = $1 AND l.supervisor_rating IS NOT NULL
+       ORDER BY l.created_at DESC`,
+      [user.id]
+    );
+
+    res.json(result.rows);
   } catch (error) {
     handleError(res, error);
   }
@@ -592,13 +1221,166 @@ app.get('/api/coordinator/student-logbooks', async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT u.name AS student_name, u.email AS student_email, l.week, l.content, l.created_at
+      `SELECT u.name AS student_name, u.email AS student_email, l.week, l.content, l.supervisor_approved, l.submitted_to_coordinator, l.supervisor_rating, l.supervisor_comments, l.created_at
        FROM logbooks l
        JOIN users u ON u.id = l.user_id
-       WHERE u.role = 'student'
+       WHERE u.role = 'student' AND l.submitted_to_coordinator = TRUE
        ORDER BY l.created_at DESC`
     );
     res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/supervisor/student-logbooks', async (req, res) => {
+  try {
+    const role = req.query.role;
+    const email = req.query.email;
+    if (role !== 'supervisor') {
+      return res.status(403).json({ error: 'Only supervisors can access this endpoint.' });
+    }
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const supervisorResult = await pool.query('SELECT supervisor_dept FROM users WHERE email = $1 AND role = $2', [email, 'supervisor']);
+    const supervisor = supervisorResult.rows[0];
+    if (!supervisor || !supervisor.supervisor_dept) {
+      return res.status(404).json({ error: 'Supervisor profile not found or no department assigned.' });
+    }
+
+    const result = await pool.query(
+      `SELECT l.id, u.name AS student_name, u.email AS student_email, l.week, l.content,
+              l.supervisor_approved, l.submitted_to_coordinator, l.created_at
+       FROM logbooks l
+       JOIN users u ON u.id = l.user_id
+       WHERE u.role = 'student' AND u.program = $1
+       ORDER BY l.created_at DESC`,
+      [supervisor.supervisor_dept]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+console.log('🔧 Registered route: POST /api/supervisor/site-visit-assessment');
+app.post('/api/supervisor/site-visit-assessment', async (req, res) => {
+  try {
+    const { role, email, studentEmail, visitDate, visitLocation, progressSummary, challenges, overallRating, comments } = req.body;
+    if (role !== 'supervisor') {
+      return res.status(403).json({ error: 'Only supervisors can submit site visit assessments.' });
+    }
+    if (!email || !studentEmail || !visitDate || !progressSummary || !overallRating) {
+      return res.status(400).json({ error: 'Missing required fields for site visit assessment.' });
+    }
+
+    const supervisorResult = await pool.query('SELECT supervisor_dept FROM users WHERE email = $1 AND role = $2', [email, 'supervisor']);
+    const supervisor = supervisorResult.rows[0];
+    if (!supervisor || !supervisor.supervisor_dept) {
+      return res.status(404).json({ error: 'Supervisor profile not found or department not assigned.' });
+    }
+
+    const studentResult = await pool.query('SELECT name, program FROM users WHERE email = $1 AND role = $2', [studentEmail, 'student']);
+    const student = studentResult.rows[0];
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    if (student.program !== supervisor.supervisor_dept) {
+      return res.status(403).json({ error: 'Supervisor is not authorized to assess this student.' });
+    }
+
+    const rating = Number(overallRating);
+    if (isNaN(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be a number between 1 and 5.' });
+    }
+
+    await pool.query(
+      `INSERT INTO site_visit_assessments (
+         supervisor_email, student_email, student_name, visit_date,
+         visit_location, progress_summary, challenges, overall_rating, comments
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [email, studentEmail, student.name, visitDate, visitLocation || null, progressSummary, challenges || null, rating, comments || null]
+    );
+
+    res.json({ message: 'Site visit assessment submitted successfully.' });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/supervisor/site-visit-assessments', async (req, res) => {
+  try {
+    const role = req.query.role;
+    const email = req.query.email;
+    if (role !== 'supervisor') {
+      return res.status(403).json({ error: 'Only supervisors can access site visit assessments.' });
+    }
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const supervisorResult = await pool.query('SELECT supervisor_dept FROM users WHERE email = $1 AND role = $2', [email, 'supervisor']);
+    const supervisor = supervisorResult.rows[0];
+    if (!supervisor || !supervisor.supervisor_dept) {
+      return res.status(404).json({ error: 'Supervisor profile not found or department not assigned.' });
+    }
+
+    const assessmentsResult = await pool.query(
+      `SELECT id, supervisor_email, student_email, student_name, visit_date, visit_location,
+              progress_summary, challenges, overall_rating, comments, created_at
+       FROM site_visit_assessments
+       WHERE supervisor_email = $1
+       ORDER BY visit_date DESC, created_at DESC`,
+      [email]
+    );
+
+    res.json(assessmentsResult.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/logbooks/approve', async (req, res) => {
+  try {
+    const { role, email, logbookId, supervisorRating, supervisorComments } = req.body;
+    if (role !== 'supervisor') {
+      return res.status(403).json({ error: 'Only supervisors can approve logbooks.' });
+    }
+    if (!email || !logbookId) {
+      return res.status(400).json({ error: 'Email and logbookId are required.' });
+    }
+
+    const rating = supervisorRating ? Number(supervisorRating) : null;
+    const comments = supervisorComments ? String(supervisorComments).trim() : null;
+    if (rating !== null && (isNaN(rating) || rating < 1 || rating > 5)) {
+      return res.status(400).json({ error: 'Supervisor rating must be between 1 and 5.' });
+    }
+
+    const supervisorResult = await pool.query('SELECT supervisor_dept FROM users WHERE email = $1 AND role = $2', [email, 'supervisor']);
+    const supervisor = supervisorResult.rows[0];
+    if (!supervisor || !supervisor.supervisor_dept) {
+      return res.status(404).json({ error: 'Supervisor profile not found or no department assigned.' });
+    }
+
+    const updateResult = await pool.query(
+      `UPDATE logbooks
+       SET supervisor_approved = TRUE,
+           submitted_to_coordinator = TRUE,
+           supervisor_rating = $3,
+           supervisor_comments = $4
+       WHERE id = $1
+         AND user_id IN (SELECT id FROM users WHERE role = 'student' AND program = $2)
+       RETURNING id`,
+      [logbookId, supervisor.supervisor_dept, rating, comments]
+    );
+
+    if (!updateResult.rows[0]) {
+      return res.status(404).json({ error: 'Logbook entry not found or not authorized.' });
+    }
+
+    res.json({ message: 'Logbook approved and submitted to the coordinator dashboard.' });
   } catch (error) {
     handleError(res, error);
   }

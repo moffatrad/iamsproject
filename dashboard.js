@@ -13,6 +13,9 @@
   let logbooks = [];
   let organizations = [];
   let supervisorStudents = [];
+  let finalReport = null;
+  let notifications = [];
+  let upcomingDeadlines = [];
   let stats = { students: 0, organizations: 0, logbooks: 0 };
 
   const coordCard = document.getElementById('coordinatorDashboardCard');
@@ -41,9 +44,48 @@
   const organizationListDiv = document.getElementById('organizationList');
   const supervisorStudentsCard = document.getElementById('supervisorStudentsCard');
   const supervisorStudentsList = document.getElementById('supervisorStudentsList');
+  const supervisorLogbooksCard = document.getElementById('supervisorLogbooksCard');
+  const supervisorLogbooksList = document.getElementById('supervisorLogbooksList');
+  const finalReportCard = document.getElementById('finalReportCard');
+  const finalReportForm = document.getElementById('finalReportForm');
+  const assessmentResultsCard = document.getElementById('assessmentResultsCard');
+  const assessmentResultsList = document.getElementById('assessmentResultsList');
+  const finalReportMessage = document.getElementById('finalReportMessage');
+  const notificationsCard = document.getElementById('notificationsCard');
+  const deadlinesList = document.getElementById('deadlinesList');
+  const notificationsList = document.getElementById('notificationsList');
+  const sendRemindersBtn = document.getElementById('sendRemindersBtn');
+  const remindersMessage = document.getElementById('remindersMessage');
+  const exportDataBtn = document.getElementById('exportDataBtn');
+  const exportMessage = document.getElementById('exportMessage');
+  const createBackupBtn = document.getElementById('createBackupBtn');
+  const viewBackupsBtn = document.getElementById('viewBackupsBtn');
+  const backupHistory = document.getElementById('backupHistory');
+  const backupList = document.getElementById('backupList');
+  const encryptExport = document.getElementById('encryptExport');
+  const createBackup = document.getElementById('createBackup');
+  const siteVisitForm = document.getElementById('siteVisitForm');
+  const siteVisitStudent = document.getElementById('siteVisitStudent');
+  const siteVisitDate = document.getElementById('siteVisitDate');
+  const siteVisitLocation = document.getElementById('siteVisitLocation');
+  const siteVisitProgress = document.getElementById('siteVisitProgress');
+  const siteVisitChallenges = document.getElementById('siteVisitChallenges');
+  const siteVisitRating = document.getElementById('siteVisitRating');
+  const siteVisitComments = document.getElementById('siteVisitComments');
+  const siteVisitMessage = document.getElementById('siteVisitMessage');
+  const siteVisitHistory = document.getElementById('siteVisitHistory');
   const runMatchingBtn = document.getElementById('runMatchingBtn');
   const matchingMessage = document.getElementById('matchingMessage');
   const matchingResults = document.getElementById('matchingResults');
+  const coordFinalReportsDiv = document.getElementById('coordFinalReports');
+  const coordRegistrationsDiv = document.getElementById('coordRegistrations');
+  const registrationSearchInput = document.getElementById('registrationSearch');
+  const registrationRoleFilter = document.getElementById('registrationRoleFilter');
+  const registrationSortOrder = document.getElementById('registrationSortOrder');
+  let coordinatorUsers = [];
+  let registrationSearchQuery = '';
+  let registrationFilterRole = 'all';
+  let registrationSortOrderValue = 'name_asc';
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     localStorage.clear();
@@ -52,6 +94,47 @@
 
   if (runMatchingBtn) {
     runMatchingBtn.addEventListener('click', runCoordinatorMatching);
+  }
+
+  if (sendRemindersBtn) {
+    sendRemindersBtn.addEventListener('click', sendReminderToAllStudents);
+  }
+
+  if (exportDataBtn) {
+    exportDataBtn.addEventListener('click', exportData);
+  }
+
+  if (createBackupBtn) {
+    createBackupBtn.addEventListener('click', createSecureBackup);
+  }
+
+  if (viewBackupsBtn) {
+    viewBackupsBtn.addEventListener('click', viewBackupHistory);
+  }
+
+  if (siteVisitForm) {
+    siteVisitForm.addEventListener('submit', submitSiteVisitAssessment);
+  }
+
+  if (registrationSearchInput) {
+    registrationSearchInput.addEventListener('input', event => {
+      registrationSearchQuery = event.target.value.trim().toLowerCase();
+      renderCoordinatorRegistrations();
+    });
+  }
+
+  if (registrationRoleFilter) {
+    registrationRoleFilter.addEventListener('change', event => {
+      registrationFilterRole = event.target.value;
+      renderCoordinatorRegistrations();
+    });
+  }
+
+  if (registrationSortOrder) {
+    registrationSortOrder.addEventListener('change', event => {
+      registrationSortOrderValue = event.target.value;
+      renderCoordinatorRegistrations();
+    });
   }
 
   function escapeHtml(value) {
@@ -77,8 +160,16 @@
     coordCard.style.display = currentRole === 'coordinator' ? 'block' : 'none';
     coordinatorPanel.style.display = currentRole === 'coordinator' ? 'block' : 'none';
     logbookCard.style.display = currentRole === 'student' ? 'block' : 'none';
+    finalReportCard.style.display = currentRole === 'student' ? 'block' : 'none';
+    assessmentResultsCard.style.display = currentRole === 'student' ? 'block' : 'none';
+    notificationsCard.style.display = currentRole === 'student' || currentRole === 'coordinator' ? 'block' : 'none';
     organizationListCard.style.display = currentRole === 'student' ? 'block' : 'none';
     supervisorStudentsCard.style.display = currentRole === 'supervisor' ? 'block' : 'none';
+    supervisorLogbooksCard.style.display = currentRole === 'supervisor' ? 'block' : 'none';
+    const supervisorSiteVisitCard = document.getElementById('supervisorSiteVisitCard');
+    if (supervisorSiteVisitCard) {
+      supervisorSiteVisitCard.style.display = currentRole === 'supervisor' ? 'block' : 'none';
+    }
 
     if (currentRole === 'student' || currentRole === 'organization') {
       prefCard.style.display = 'block';
@@ -96,13 +187,24 @@
     regTitle.innerHTML = `<i class="fas fa-user"></i> ${titles[currentRole]}`;
 
     await loadUserData();
+    await loadNotifications();
+    await loadUpcomingDeadlines();
+    await loadAssessmentResults();
     renderProfileForm();
     renderPrefForm();
     renderSupervisorStudents();
     renderOrganizationList();
     renderLogbookEntries();
+    renderFinalReportForm();
+    renderNotifications();
+    renderDeadlines();
     updateStats();
     updateSummary();
+    if (currentRole === 'supervisor') {
+      await renderSiteVisitForm();
+      await loadSupervisorLogbooks();
+      await loadSupervisorVisitAssessments();
+    }
     if (currentRole === 'coordinator') {
       await loadCoordinatorData();
     }
@@ -122,10 +224,424 @@
       logbooks = data.logbooks || [];
       organizations = data.organizations || [];
       supervisorStudents = data.supervisorStudents || [];
+      finalReport = data.finalReport || null;
       await fetchStats();
     } catch (error) {
       console.error(error);
       alert('Unable to load dashboard data. Please ensure the backend server is running.');
+    }
+  }
+
+  async function loadNotifications() {
+    try {
+      const response = await fetch(`${API_BASE}/api/notifications?email=${encodeURIComponent(userEmail)}`);
+      if (!response.ok) return;
+      notifications = await response.json();
+      renderNotifications();
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+    }
+  }
+
+  async function loadUpcomingDeadlines() {
+    try {
+      const response = await fetch(`${API_BASE}/api/upcoming-deadlines`);
+      if (!response.ok) return;
+      upcomingDeadlines = await response.json();
+      renderDeadlines();
+    } catch (error) {
+      console.error('Failed to load deadlines:', error);
+    }
+  }
+
+  function renderNotifications() {
+    if (!notificationsList) return;
+    if (!notifications || notifications.length === 0) {
+      notificationsList.innerHTML = '<p>No notifications yet.</p>';
+      return;
+    }
+
+    notificationsList.innerHTML = `
+      <strong>Recent Notifications:</strong>
+      ${notifications.map(notif => `
+        <div class="log-entry" style="opacity: ${notif.is_read ? 0.6 : 1};">
+          ${notif.message}<br>
+          <small style="color: #3d5d78;">${new Date(notif.created_at).toLocaleString()}</small>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  function renderDeadlines() {
+    if (!deadlinesList) return;
+    if (!upcomingDeadlines || upcomingDeadlines.length === 0) {
+      deadlinesList.innerHTML = '<p>No upcoming deadlines.</p>';
+      return;
+    }
+
+    deadlinesList.innerHTML = `
+      <strong>📅 Upcoming Deadlines:</strong>
+      ${upcomingDeadlines.map(deadline => {
+        const daysUntil = Math.ceil((new Date(deadline.deadline_date) - new Date()) / (1000 * 60 * 60 * 24));
+        const urgency = daysUntil <= 3 ? 'color: #d32f2f;' : daysUntil <= 7 ? 'color: #f57c00;' : '';
+        return `
+          <div class="log-entry" style="${urgency}">
+            <strong>${escapeHtml(deadline.deadline_type)}</strong> - ${escapeHtml(deadline.description)}<br>
+            <small>Due: ${new Date(deadline.deadline_date).toLocaleString()} (${daysUntil} days)</small>
+          </div>
+        `;
+      }).join('')}
+    `;
+  }
+
+  async function loadAssessmentResults() {
+    try {
+      const response = await fetch(`${API_BASE}/api/student/assessment-results?email=${encodeURIComponent(userEmail)}`);
+      if (!response.ok) return;
+      const assessments = await response.json();
+      renderAssessmentResults(assessments);
+    } catch (error) {
+      console.error('Failed to load assessment results:', error);
+    }
+  }
+
+  function renderAssessmentResults(assessments) {
+    if (!assessmentResultsList) return;
+    if (!assessments || assessments.length === 0) {
+      assessmentResultsList.innerHTML = '<p>No assessments available yet.</p>';
+      return;
+    }
+
+    assessmentResultsList.innerHTML = `
+      <strong>📊 Your Assessment Results:</strong>
+      ${assessments.map(assessment => `
+        <div class="log-entry">
+          <strong>Week ${assessment.week}</strong> - Rating: ${assessment.supervisor_rating}/5<br>
+          <em>Feedback:</em> ${escapeHtml(assessment.supervisor_comments || 'No comments provided')}<br>
+          <small style="color: #3d5d78;">Submitted: ${new Date(assessment.created_at).toLocaleString()}</small>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  async function sendReminderToAllStudents() {
+    if (!sendRemindersBtn || currentRole !== 'coordinator') return;
+    
+    sendRemindersBtn.disabled = true;
+    remindersMessage.textContent = 'Sending reminders...';
+
+    try {
+      const response = await fetch(`${API_BASE}/api/coordinator/send-deadline-reminders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: currentRole })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to send reminders.');
+      remindersMessage.textContent = `✅ ${result.message}`;
+      await loadNotifications();
+    } catch (error) {
+      console.error(error);
+      remindersMessage.textContent = '⚠️ Failed to send reminders.';
+    } finally {
+      sendRemindersBtn.disabled = false;
+    }
+  }
+
+  async function exportData() {
+    if (!exportDataBtn || currentRole !== 'coordinator') return;
+    
+    exportDataBtn.disabled = true;
+    exportMessage.textContent = 'Preparing export...';
+
+    try {
+      const checkboxes = document.querySelectorAll('input[name="exportData"]:checked');
+      const selectedData = Array.from(checkboxes).map(cb => cb.value);
+      
+      if (selectedData.length === 0) {
+        exportMessage.textContent = '⚠️ Please select at least one data type to export.';
+        exportDataBtn.disabled = false;
+        return;
+      }
+
+      const encrypt = encryptExport.checked;
+      const createBackupFile = createBackup.checked;
+
+      const response = await fetch(`${API_BASE}/api/coordinator/export-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          dataTypes: selectedData, 
+          role: currentRole,
+          encrypt: encrypt,
+          createBackup: createBackupFile
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Unable to export data.');
+      }
+
+      const data = await response.json();
+      
+      // Create a download link
+      const dataStr = JSON.stringify(data, null, 2);
+      const dataBlob = new Blob([dataStr], { type: encrypt ? 'application/octet-stream' : 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = createBackupFile 
+        ? `iams-backup-${timestamp}.json${encrypt ? '.enc' : ''}`
+        : `iams-export-${new Date().toISOString().split('T')[0]}.json${encrypt ? '.enc' : ''}`;
+      
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      exportMessage.textContent = `✅ ${createBackupFile ? 'Backup created' : 'Data exported'} successfully!${encrypt ? ' (Encrypted)' : ''}`;
+    } catch (error) {
+      console.error(error);
+      exportMessage.textContent = `⚠️ Export failed: ${error.message}`;
+    } finally {
+      exportDataBtn.disabled = false;
+    }
+  }
+
+  async function createSecureBackup() {
+    if (!createBackupBtn || currentRole !== 'coordinator') return;
+    
+    createBackupBtn.disabled = true;
+    exportMessage.textContent = 'Creating secure backup...';
+
+    try {
+      const checkboxes = document.querySelectorAll('input[name="exportData"]:checked');
+      const selectedData = Array.from(checkboxes).map(cb => cb.value);
+      
+      if (selectedData.length === 0) {
+        exportMessage.textContent = '⚠️ Please select at least one data type to backup.';
+        createBackupBtn.disabled = false;
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/api/coordinator/create-backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          dataTypes: selectedData, 
+          role: currentRole,
+          encrypt: true,
+          createBackup: true
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Unable to create backup.');
+      }
+
+      const result = await response.json();
+      
+      exportMessage.textContent = `✅ Secure backup created successfully! Backup ID: ${result.backupId}`;
+      
+      // Refresh backup history if visible
+      if (backupHistory.style.display !== 'none') {
+        viewBackupHistory();
+      }
+    } catch (error) {
+      console.error(error);
+      exportMessage.textContent = `⚠️ Backup creation failed: ${error.message}`;
+    } finally {
+      createBackupBtn.disabled = false;
+    }
+  }
+
+  async function viewBackupHistory() {
+    if (!viewBackupsBtn || currentRole !== 'coordinator') return;
+    
+    viewBackupsBtn.disabled = true;
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/coordinator/backup-history`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Unable to load backup history.');
+      }
+
+      const backups = await response.json();
+      
+      backupList.innerHTML = '';
+      
+      if (backups.length === 0) {
+        backupList.innerHTML = '<p>No backups found.</p>';
+      } else {
+        backups.forEach(backup => {
+          const backupItem = document.createElement('div');
+          backupItem.className = 'backup-item';
+          backupItem.style.cssText = 'border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 4px;';
+          
+          const timestamp = new Date(backup.created_at).toLocaleString();
+          const size = backup.size ? `${(backup.size / 1024).toFixed(2)} KB` : 'Unknown size';
+          
+          backupItem.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong>${backup.filename}</strong><br>
+                <small>Created: ${timestamp} | Size: ${size}</small>
+              </div>
+              <div>
+                <button class="btn btn-small" onclick="downloadBackup('${backup.id}')">
+                  <i class="fas fa-download"></i> Download
+                </button>
+              </div>
+            </div>
+          `;
+          
+          backupList.appendChild(backupItem);
+        });
+      }
+      
+      backupHistory.style.display = 'block';
+    } catch (error) {
+      console.error(error);
+      backupList.innerHTML = `<p style="color: red;">Error loading backup history: ${error.message}</p>`;
+    } finally {
+      viewBackupsBtn.disabled = false;
+    }
+  }
+
+  // Global function for downloading backups
+  window.downloadBackup = async function(backupId) {
+    try {
+      const response = await fetch(`${API_BASE}/api/coordinator/download-backup/${backupId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to download backup');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `backup-${backupId}.json.enc`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      alert(`Download failed: ${error.message}`);
+    }
+  };
+
+  function renderSiteVisitForm() {
+    if (!siteVisitStudent || !siteVisitForm) return;
+
+    siteVisitStudent.innerHTML = '<option value="">Select a supervised student</option>' +
+      supervisorStudents.map(student => `
+        <option value="${escapeHtml(student.email)}">${escapeHtml(student.name || student.email)}</option>
+      `).join('');
+
+    siteVisitDate.value = new Date().toISOString().split('T')[0];
+  }
+
+  async function loadSupervisorVisitAssessments() {
+    if (!siteVisitHistory) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/supervisor/site-visit-assessments?role=supervisor&email=${encodeURIComponent(userEmail)}`);
+      if (!response.ok) {
+        throw new Error('Unable to load site visit assessments.');
+      }
+      const assessments = await response.json();
+      renderSiteVisitAssessments(assessments);
+    } catch (error) {
+      console.error(error);
+      siteVisitHistory.innerHTML = '<p>Unable to load site visit assessments.</p>';
+    }
+  }
+
+  function renderSiteVisitAssessments(assessments) {
+    if (!siteVisitHistory) return;
+    if (!assessments || assessments.length === 0) {
+      siteVisitHistory.innerHTML = '<p>No site visit assessments have been submitted yet.</p>';
+      return;
+    }
+
+    siteVisitHistory.innerHTML = assessments.map(assessment => `
+      <div class="log-entry">
+        <strong>${escapeHtml(assessment.student_name || assessment.student_email)}</strong> — ${new Date(assessment.visit_date).toLocaleDateString()}<br>
+        <strong>Location:</strong> ${escapeHtml(assessment.visit_location || 'N/A')}<br>
+        <strong>Progress Summary:</strong> ${escapeHtml(assessment.progress_summary || 'No summary')}<br>
+        <strong>Challenges:</strong> ${escapeHtml(assessment.challenges || 'None')}<br>
+        <strong>Rating:</strong> ${escapeHtml(assessment.overall_rating || 'N/A')} / 5<br>
+        <em>${escapeHtml(assessment.comments || '')}</em><br>
+        <small>${new Date(assessment.created_at).toLocaleString()}</small>
+      </div>
+    `).join('');
+  }
+
+  async function submitSiteVisitAssessment(event) {
+    event.preventDefault();
+    if (!siteVisitForm) return;
+
+    siteVisitMessage.textContent = 'Submitting assessment...';
+    const studentEmail = siteVisitStudent.value;
+    const visitDateValue = siteVisitDate.value;
+    const visitLocationValue = siteVisitLocation.value.trim();
+    const progressValue = siteVisitProgress.value.trim();
+    const challengesValue = siteVisitChallenges.value.trim();
+    const ratingValue = siteVisitRating.value;
+    const commentsValue = siteVisitComments.value.trim();
+
+    if (!studentEmail || !visitDateValue || !progressValue || !ratingValue) {
+      siteVisitMessage.textContent = '⚠️ Please select a student, date, progress summary, and rating.';
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/supervisor/site-visit-assessment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: currentRole,
+          email: userEmail,
+          studentEmail,
+          visitDate: visitDateValue,
+          visitLocation: visitLocationValue,
+          progressSummary: progressValue,
+          challenges: challengesValue,
+          overallRating: ratingValue,
+          comments: commentsValue
+        })
+      });
+
+      let result;
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        result = { error: await response.text() };
+      }
+      if (!response.ok) {
+        throw new Error(result.error || 'Unable to submit site visit assessment.');
+      }
+
+      siteVisitMessage.textContent = '✅ Site visit assessment submitted successfully.';
+      siteVisitForm.reset();
+      renderSiteVisitForm();
+      await loadSupervisorVisitAssessments();
+    } catch (error) {
+      console.error(error);
+      siteVisitMessage.textContent = `⚠️ ${error.message}`;
     }
   }
 
@@ -135,7 +651,7 @@
       if (!response.ok) return;
       stats = await response.json();
     } catch (error) {
-      console.error(error);
+      console.error('Failed to fetch stats:', error);
     }
   }
 
@@ -156,6 +672,16 @@
       if (logbooksResponse.ok) {
         const logs = await logbooksResponse.json();
         renderCoordinatorLogbooks(logs);
+      }
+      const finalReportsResponse = await fetch(`${API_BASE}/api/coordinator/final-reports?role=coordinator`);
+      if (finalReportsResponse.ok) {
+        const finalReports = await finalReportsResponse.json();
+        renderCoordinatorFinalReports(finalReports);
+      }
+      const usersResponse = await fetch(`${API_BASE}/api/users`);
+      if (usersResponse.ok) {
+        coordinatorUsers = await usersResponse.json();
+        renderCoordinatorRegistrations();
       }
     } catch (error) {
       console.error('Failed to load coordinator data', error);
@@ -273,8 +799,74 @@
 
     coordLogbooksDiv.innerHTML = logs.map(log => `
       <div class="log-entry">
-        <strong>${log.student_name}</strong> (Week ${log.week})<br>
-        ${log.content}
+        <strong>${escapeHtml(log.student_name)}</strong> (Week ${escapeHtml(log.week)})<br>
+        <div style="margin:8px 0; white-space: pre-wrap;">${escapeHtml(log.content)}</div>
+        ${log.supervisor_rating ? `<div><strong>Supervisor Rating:</strong> ${escapeHtml(log.supervisor_rating)}</div>` : ''}
+        ${log.supervisor_comments ? `<div><strong>Supervisor Comments:</strong><br>${escapeHtml(log.supervisor_comments)}</div>` : ''}
+      </div>
+    `).join('');
+  }
+
+  function renderCoordinatorFinalReports(reports) {
+    if (!coordFinalReportsDiv) return;
+    if (!reports || !reports.length) {
+      coordFinalReportsDiv.innerHTML = '<p>No final reports submitted yet.</p>';
+      return;
+    }
+
+    coordFinalReportsDiv.innerHTML = reports.map(report => `
+      <div class="log-entry">
+        <strong>${escapeHtml(report.student_name)}</strong> - ${escapeHtml(report.title)}<br>
+        <div style="margin: 8px 0; white-space: pre-wrap;">${escapeHtml(report.content)}</div>
+        <div style="font-size: 0.9rem; color: #3d5d78;">Submitted: ${new Date(report.submitted_at).toLocaleString()}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderCoordinatorRegistrations(users) {
+    const list = Array.isArray(users) ? users : coordinatorUsers;
+    const filtered = list.filter(user => {
+      if (!user) return false;
+      if (registrationFilterRole !== 'all' && String(user.role || '').toLowerCase() !== registrationFilterRole) {
+        return false;
+      }
+
+      if (!registrationSearchQuery) return true;
+
+      const searchTarget = [user.name, user.email, user.role]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return searchTarget.includes(registrationSearchQuery);
+    });
+
+    if (!filtered.length) {
+      coordRegistrationsDiv.innerHTML = `<p>No registrations match your search or filter.</p>`;
+      return;
+    }
+
+    const sorted = filtered.slice().sort((a, b) => {
+      const roleA = String(a.role || '').toLowerCase();
+      const roleB = String(b.role || '').toLowerCase();
+      const nameA = String(a.name || a.email || '').toLowerCase();
+      const nameB = String(b.name || b.email || '').toLowerCase();
+
+      switch (registrationSortOrderValue) {
+        case 'name_desc':
+          return nameB.localeCompare(nameA);
+        case 'role_asc':
+          return roleA.localeCompare(roleB) || nameA.localeCompare(nameB);
+        case 'role_desc':
+          return roleB.localeCompare(roleA) || nameA.localeCompare(nameB);
+        default:
+          return nameA.localeCompare(nameB);
+      }
+    });
+
+    coordRegistrationsDiv.innerHTML = sorted.map(user => `
+      <div class="log-entry">
+        <strong>${escapeHtml(user.name || user.email)}</strong> (${escapeHtml(user.role)})<br>
+        ${escapeHtml(user.email)}
       </div>
     `).join('');
   }
@@ -377,6 +969,24 @@
     }
   }
 
+  function renderFinalReportForm() {
+    if (!finalReportCard) return;
+    
+    const titleInput = document.getElementById('finalReportTitle');
+    const contentInput = document.getElementById('finalReportContent');
+    if (finalReport) {
+      titleInput.value = finalReport.title || '';
+      contentInput.value = finalReport.content || '';
+      finalReportMessage.textContent = finalReport.submitted_at
+        ? `Last submitted: ${new Date(finalReport.submitted_at).toLocaleString()}`
+        : '';
+    } else {
+      titleInput.value = '';
+      contentInput.value = '';
+      finalReportMessage.textContent = '';
+    }
+  }
+
   function renderSupervisorStudents() {
     if (currentRole !== 'supervisor') {
       supervisorStudentsList.innerHTML = '';
@@ -396,6 +1006,120 @@
         <span>Matched org: ${student.matchedOrganization ? (student.matchedOrganization.name || student.matchedOrganization.email) : 'None'}</span>
       </div>
     `).join('');
+  }
+
+  async function submitFinalReport(event) {
+    event.preventDefault();
+    const title = document.getElementById('finalReportTitle')?.value.trim();
+    const content = document.getElementById('finalReportContent')?.value.trim();
+
+    if (!title || !content) {
+      finalReportMessage.textContent = 'Please provide both a title and report content.';
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/final-reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, title, content })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unable to submit final report.');
+      finalReport = result.report;
+      finalReportMessage.textContent = '✅ Final report submitted successfully.';
+      renderFinalReportForm();
+      await fetchStats();
+      updateStats();
+    } catch (error) {
+      console.error(error);
+      finalReportMessage.textContent = '⚠️ Failed to submit final report.';
+    }
+  }
+
+  async function loadSupervisorLogbooks() {
+    if (!supervisorLogbooksList) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/supervisor/student-logbooks?role=supervisor&email=${encodeURIComponent(userEmail)}`);
+      if (!response.ok) {
+        throw new Error('Unable to load supervised logbooks.');
+      }
+      const logs = await response.json();
+      renderSupervisorLogbooks(logs);
+    } catch (error) {
+      console.error(error);
+      supervisorLogbooksList.innerHTML = '<p>Unable to load supervised logbooks.</p>';
+    }
+  }
+
+  function renderSupervisorLogbooks(logs) {
+    if (!supervisorLogbooksList) return;
+    if (!logs || logs.length === 0) {
+      supervisorLogbooksList.innerHTML = '<p>No logbook entries available for approval.</p>';
+      return;
+    }
+
+    supervisorLogbooksList.innerHTML = logs.map(log => {
+      const approvedLabel = log.supervisor_approved ? 'Approved' : 'Pending approval';
+      const submittedLabel = log.submitted_to_coordinator ? 'Submitted' : 'Not submitted';
+      return `
+        <div class="log-entry supervisor-logbook-row" data-id="${escapeHtml(log.id)}">
+          <strong>${escapeHtml(log.student_name || log.student_email)}</strong> (Week ${escapeHtml(log.week)})<br>
+          <div style="margin: 8px 0; white-space: pre-wrap;">${escapeHtml(log.content)}</div>
+          <div style="font-size: 0.9rem; color: #3d5d78; margin-bottom: 10px;">Status: ${approvedLabel} · ${submittedLabel}</div>
+          ${log.supervisor_rating ? `<div style="margin-bottom:10px;"><strong>Rating:</strong> ${escapeHtml(log.supervisor_rating)}</div>` : ''}
+          ${log.supervisor_comments ? `<div style="margin-bottom:10px;"><strong>Supervisor Comments:</strong><br>${escapeHtml(log.supervisor_comments)}</div>` : ''}
+          ${log.supervisor_approved ? '' : `
+            <div class="form-row" style="margin-bottom: 10px;">
+              <label>Assessment Rating</label>
+              <select class="assessment-rating">
+                <option value="5">5 - Excellent</option>
+                <option value="4">4 - Good</option>
+                <option value="3">3 - Satisfactory</option>
+                <option value="2">2 - Needs Improvement</option>
+                <option value="1">1 - Unsatisfactory</option>
+              </select>
+            </div>
+            <div class="form-row" style="margin-bottom: 10px;">
+              <label>Assessment Comments</label>
+              <textarea class="assessment-comments" placeholder="Enter your performance evaluation..."></textarea>
+            </div>
+            <button class="btn btn-small approve-logbook-btn" data-id="${escapeHtml(log.id)}">Approve & Submit Assessment</button>
+          `}
+        </div>
+      `;
+    }).join('');
+
+    supervisorLogbooksList.querySelectorAll('.approve-logbook-btn').forEach(button => {
+      button.addEventListener('click', () => handleApproveLogbook(button.dataset.id));
+    });
+  }
+
+  async function handleApproveLogbook(logbookId) {
+    if (!logbookId) return;
+    const row = document.querySelector(`.supervisor-logbook-row[data-id="${logbookId}"]`);
+    const rating = row?.querySelector('.assessment-rating')?.value;
+    const comments = row?.querySelector('.assessment-comments')?.value.trim();
+
+    try {
+      const response = await fetch(`${API_BASE}/api/logbooks/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: currentRole, email: userEmail, logbookId, supervisorRating: rating, supervisorComments: comments })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Unable to approve the logbook entry.');
+      }
+      alert(result.message || 'Logbook approved and assessment submitted.');
+      await loadSupervisorLogbooks();
+      if (currentRole === 'coordinator') {
+        await loadCoordinatorData();
+      }
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'Failed to approve logbook entry.');
+    }
   }
 
   function renderOrganizationList() {
@@ -451,6 +1175,10 @@
       document.getElementById('profileMessage').textContent = '⚠️ Failed to save profile';
     }
   });
+
+  if (finalReportForm) {
+    finalReportForm.addEventListener('submit', submitFinalReport);
+  }
 
   document.getElementById('prefForm').addEventListener('submit', async (e) => {
     e.preventDefault();

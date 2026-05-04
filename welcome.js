@@ -173,10 +173,16 @@
           <div style="font-size: 24px; font-weight: bold; color: #0f3b5e; letter-spacing: 2px; text-align: center; margin: 8px 0;">
             ${displayedOtpCode}
           </div>
-          <p style="font-size: 12px; color: #555; margin: 8px 0 0 0;">The code has been automatically filled below. Enter your new password and click Update Password.</p>
+          <p style="font-size: 12px; color: #555; margin: 8px 0 0 0;">The reset code is shown here and has been automatically filled in the reset field below. Enter your new password and click Update Password.</p>
         </div>
       `;
       codeValue = displayedOtpCode;
+    } else {
+      codeDisplay = `
+        <div class="form-group" style="background-color: #fcf5e6; padding: 12px; border-radius: 6px; border: 2px solid #d9b600;">
+          <p style="font-size: 13px; color: #755200; margin: 0;">A reset code was sent to your email. Please enter it below to update your password.</p>
+        </div>
+      `;
     }
     
     return `
@@ -271,13 +277,13 @@
         return;
       }
       pendingEmail = email;
-      displayedOtpCode = result.otpCode || '';
+      displayedOtpCode = result.otpCode ? String(result.otpCode) : '';
       currentMode = 'reset';
       renderModal();
       if (displayedOtpCode) {
-        alert(`A password reset code has been generated: ${displayedOtpCode}`);
+        alert(`A password reset code has been generated: ${displayedOtpCode}. It is also shown on the screen and auto-filled below.`);
       } else {
-        alert('A password reset code has been sent if that email is registered.');
+        alert('If this email is registered, a password reset code has been sent. Please check your email and enter the code below.');
       }
     } catch (error) {
       console.error(error);
@@ -515,21 +521,17 @@
 
     // Auto-fill reset and OTP codes
     if (currentMode === 'reset' && displayedOtpCode) {
-      setTimeout(() => {
-        const resetCodeInput = document.getElementById('resetCode');
-        if (resetCodeInput) {
-          resetCodeInput.value = displayedOtpCode;
-        }
-      }, 0);
+      const resetCodeInput = document.getElementById('resetCode');
+      if (resetCodeInput) {
+        resetCodeInput.value = displayedOtpCode;
+      }
     }
 
     if (currentMode === 'otp' && displayedOtpCode) {
-      setTimeout(() => {
-        const otpCodeInput = document.getElementById('otpCode');
-        if (otpCodeInput) {
-          otpCodeInput.value = displayedOtpCode;
-        }
-      }, 0);
+      const otpCodeInput = document.getElementById('otpCode');
+      if (otpCodeInput) {
+        otpCodeInput.value = displayedOtpCode;
+      }
     }
   }
 
