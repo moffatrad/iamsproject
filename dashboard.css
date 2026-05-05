@@ -192,6 +192,47 @@ textarea {
   font-size: 0.95rem;
 }
 
+.student-card {
+  background: #f0f9ff;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #b3d9ff;
+  margin-bottom: 12px;
+}
+
+.student-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.student-header strong {
+  color: #0f3b5e;
+  font-size: 1.1rem;
+}
+
+.student-id {
+  background: #e1f0ff;
+  color: #2a76c6;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.student-details p {
+  margin: 6px 0;
+  color: #3a5b79;
+  font-size: 0.9rem;
+}
+
+.student-details i {
+  width: 16px;
+  color: #2a76c6;
+  margin-right: 8px;
+}
+
 .collapsible-section {
   margin-bottom: 18px;
 }

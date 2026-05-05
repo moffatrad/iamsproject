@@ -2,20 +2,45 @@
   'use strict';
 
   // Backend API configuration
-  const API_BASE = window.location.hostname === 'localhost' 
-    ? 'http://localhost:3000'
-    : 'https://iamsproject-production.up.railway.app';
+  const API_BASE = window.location.hostname === 'localhost'
+    ? window.location.origin
+    : window.location.protocol === 'file:'
+      ? 'http://localhost:3000'
+      : 'https://iamsproject-production.up.railway.app';
 
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContainer = document.getElementById('modalContainer');
   const showLoginBtn = document.getElementById('showLoginBtn');
   const showSignupBtn = document.getElementById('showSignupBtn');
 
-  let currentMode = 'login'; // 'login', 'signup', 'forgot', 'otp', 'reset'
+  let currentMode = 'login'; // 'login', 'signup', 'forgot', 'otp', 'reset', 'change'
   let selectedRole = 'student';
   let pendingEmail = '';
   let pendingRole = 'student';
   let displayedOtpCode = '';
+
+  function validateStrongPassword(password) {
+    if (!password || password.length < 6) {
+      return 'Password must be at least 6 characters long.';
+    }
+
+    // Check for at least one letter
+    if (!/[a-zA-Z]/.test(password)) {
+      return 'Password must contain at least one letter.';
+    }
+
+    // Check for at least one number
+    if (!/\d/.test(password)) {
+      return 'Password must contain at least one number.';
+    }
+
+    // Check for at least one symbol
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      return 'Password must contain at least one symbol (e.g., !@#$%^&*).';
+    }
+
+    return null; // Password is valid
+  }
 
   showLoginBtn.addEventListener('click', () => openModal('login'));
   showSignupBtn.addEventListener('click', () => openModal('signup'));
@@ -116,7 +141,7 @@
       </div>
       <div class="form-group">
         <label>Password</label>
-        <input type="password" id="signupPassword" placeholder="At least 6 characters" required>
+        <input type="password" id="signupPassword" placeholder="Min 6 chars: letters, numbers, symbols" required>
       </div>
       <div class="form-group">
         <label>Confirm Password</label>
@@ -197,11 +222,28 @@
       </div>
       <div class="form-group">
         <label>New Password</label>
-        <input type="password" id="resetPassword" placeholder="At least 6 characters" required>
+        <input type="password" id="resetPassword" placeholder="Min 6 chars: letters, numbers, symbols" required>
       </div>
       <div class="form-group">
         <label>Confirm Password</label>
         <input type="password" id="resetConfirm" placeholder="Re-enter password" required>
+      </div>
+    `;
+  }
+
+  function getChangeFields() {
+    return `
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="changeEmail" value="${pendingEmail}" readonly>
+      </div>
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" id="changePassword" placeholder="Min 6 chars: letters, numbers, symbols" required>
+      </div>
+      <div class="form-group">
+        <label>Confirm Password</label>
+        <input type="password" id="changeConfirm" placeholder="Re-enter password" required>
       </div>
     `;
   }
@@ -219,8 +261,9 @@
         alert('Passwords do not match.');
         return null;
       }
-      if (password.length < 6) {
-        alert('Password must be at least 6 characters long.');
+      const passwordError = validateStrongPassword(password);
+      if (passwordError) {
+        alert(passwordError);
         return null;
       }
     }
@@ -265,26 +308,16 @@
       return;
     }
 
+    // Check if user exists by making a simple request
     try {
-      const response = await fetch(`${API_BASE}/api/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const result = await response.json();
+      const response = await fetch(`${API_BASE}/api/me?email=${encodeURIComponent(email)}`);
       if (!response.ok) {
-        alert(result.error || 'Unable to send reset instructions.');
+        alert('User not found. Please check your email address.');
         return;
       }
       pendingEmail = email;
-      displayedOtpCode = result.otpCode ? String(result.otpCode) : '';
-      currentMode = 'reset';
+      currentMode = 'change';
       renderModal();
-      if (displayedOtpCode) {
-        alert(`A password reset code has been generated: ${displayedOtpCode}. It is also shown on the screen and auto-filled below.`);
-      } else {
-        alert('If this email is registered, a password reset code has been sent. Please check your email and enter the code below.');
-      }
     } catch (error) {
       console.error(error);
       alert('Unable to connect to the backend. Please try again.');
@@ -331,8 +364,9 @@
       alert('Passwords do not match.');
       return;
     }
-    if (password.length < 6) {
-      alert('Password must be at least 6 characters long.');
+    const passwordError = validateStrongPassword(password);
+    if (passwordError) {
+      alert(passwordError);
       return;
     }
 
@@ -356,6 +390,43 @@
     }
   }
 
+  async function handleChange() {
+    const password = document.getElementById('changePassword')?.value;
+    const confirm = document.getElementById('changeConfirm')?.value;
+    if (!pendingEmail || !password || !confirm) {
+      alert('Please fill in all password fields.');
+      return;
+    }
+    if (password !== confirm) {
+      alert('Passwords do not match.');
+      return;
+    }
+    const passwordError = validateStrongPassword(password);
+    if (passwordError) {
+      alert(passwordError);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: pendingEmail, newPassword: password })
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        alert(result.error || 'Unable to change password.');
+        return;
+      }
+      alert('✅ Your password was changed successfully. Please sign in with your new password.');
+      currentMode = 'login';
+      renderModal();
+    } catch (error) {
+      console.error(error);
+      alert('Unable to connect to the backend. Please try again.');
+    }
+  }
+
   async function handleAuth() {
     if (currentMode === 'forgot') {
       return handleForgot();
@@ -365,6 +436,9 @@
     }
     if (currentMode === 'reset') {
       return handleReset();
+    }
+    if (currentMode === 'change') {
+      return handleChange();
     }
 
     const payload = submitLoginSignup();
@@ -420,7 +494,8 @@
       signup: 'Create Account',
       forgot: 'Forgot Password',
       otp: 'Enter OTP Code',
-      reset: 'Reset Your Password'
+      reset: 'Reset Your Password',
+      change: 'Change Your Password'
     };
 
     const submitTextMap = {
@@ -428,7 +503,8 @@
       signup: 'Create Account',
       forgot: 'Send reset code',
       otp: 'Verify Code',
-      reset: 'Update Password'
+      reset: 'Update Password',
+      change: 'Change Password'
     };
 
     const title = titleMap[currentMode] || 'IAMS';
@@ -457,6 +533,8 @@
       formFields = getOtpFields();
     } else if (currentMode === 'reset') {
       formFields = getResetFields();
+    } else if (currentMode === 'change') {
+      formFields = getChangeFields();
     }
 
     let codeHint = '';
@@ -475,7 +553,7 @@
 
     modalContainer.innerHTML = `
       <div class="modal-header">
-        <h2><i class="fas ${currentMode === 'login' ? 'fa-sign-in-alt' : currentMode === 'signup' ? 'fa-user-plus' : currentMode === 'forgot' ? 'fa-unlock-alt' : currentMode === 'otp' ? 'fa-shield-alt' : 'fa-key'}"></i> ${title}</h2>
+        <h2><i class="fas ${currentMode === 'login' ? 'fa-sign-in-alt' : currentMode === 'signup' ? 'fa-user-plus' : currentMode === 'forgot' ? 'fa-unlock-alt' : currentMode === 'otp' ? 'fa-shield-alt' : currentMode === 'reset' ? 'fa-key' : currentMode === 'change' ? 'fa-key' : 'fa-key'}"></i> ${title}</h2>
         <button class="close-btn" onclick="document.getElementById('modalOverlay').style.display='none'">&times;</button>
       </div>
       ${roleTabsHtml}

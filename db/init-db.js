@@ -102,6 +102,18 @@ async function seedSampleData() {
       ['student@uni.ac.bw', 1, 'Onboarding and orientation']
     );
 
+    // Create sample matches
+    await client.query(
+      `INSERT INTO matches (student_id, organization_id, score)
+       VALUES (
+         (SELECT id FROM users WHERE email = $1),
+         (SELECT id FROM users WHERE email = $2),
+         $3
+       )
+       ON CONFLICT (student_id) DO NOTHING`,
+      ['student@uni.ac.bw', 'hr@techcorp.co.bw', 85]
+    );
+
     console.log('Sample data seeded.');
   } finally {
     await client.end();

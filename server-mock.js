@@ -47,6 +47,29 @@ function generateResetCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+function validateStrongPassword(password) {
+  if (!password || password.length < 6) {
+    return 'Password must be at least 6 characters long.';
+  }
+
+  // Check for at least one letter
+  if (!/[a-zA-Z]/.test(password)) {
+    return 'Password must contain at least one letter.';
+  }
+
+  // Check for at least one number
+  if (!/\d/.test(password)) {
+    return 'Password must contain at least one number.';
+  }
+
+  // Check for at least one symbol
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return 'Password must contain at least one symbol (e.g., !@#$%^&*).';
+  }
+
+  return null; // Password is valid
+}
+
 // Hash the default password
 async function initializeMockData() {
   const hashedPassword = await bcrypt.hash('password', 10);
@@ -90,6 +113,11 @@ app.post('/api/signup', async (req, res) => {
 
     if (!email || !password || !role || !name) {
       return res.status(400).json({ error: 'All fields are required.' });
+    }
+
+    const passwordError = validateStrongPassword(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     // Check if user already exists
@@ -198,6 +226,26 @@ app.post('/api/forgot-password', (req, res) => {
   });
 });
 
+app.post('/api/change-password', (req, res) => {
+  const { email, newPassword } = req.body;
+  if (!email || !newPassword) {
+    return res.status(400).json({ error: 'Email and new password are required.' });
+  }
+
+  const passwordError = validateStrongPassword(newPassword);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
+  }
+
+  const user = mockUsers.find(u => u.email === email);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  user.password = newPassword; // In mock, we don't hash
+  return res.json({ message: 'Password changed successfully.' });
+});
+
 app.post('/api/reset-password', async (req, res) => {
   const { email, code, newPassword } = req.body;
   if (!email || !code || !newPassword) {
@@ -206,8 +254,10 @@ app.post('/api/reset-password', async (req, res) => {
   if (!resetCodes[email] || resetCodes[email] !== code) {
     return res.status(401).json({ error: 'Invalid or expired reset code.' });
   }
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+
+  const passwordError = validateStrongPassword(newPassword);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
   }
 
   const user = mockUsers.find(u => u.email === email);
@@ -252,6 +302,38 @@ app.post('/api/logbooks', (req, res) => {
   };
   mockLogbooks.push(newLogbook);
   res.status(201).json(newLogbook);
+});
+
+// Organization students endpoint
+app.get('/api/organization/students', (req, res) => {
+  const role = req.query.role;
+  const email = req.query.email;
+  if (role !== 'organization') {
+    return res.status(403).json({ error: 'Only organizations can access this endpoint.' });
+  }
+  if (!email) {
+    return res.status(400).json({ error: 'Email query parameter is required.' });
+  }
+
+  const organization = mockUsers.find(u => u.email === email && u.role === 'organization');
+  if (!organization) {
+    return res.status(404).json({ error: 'Organization not found.' });
+  }
+
+  // Mock matches - for demo purposes, return some students
+  const matchedStudents = mockUsers.filter(u => u.role === 'student').slice(0, 2).map(student => ({
+    id: student.id,
+    name: student.name,
+    email: student.email,
+    student_id: student.student_id,
+    program: student.program,
+    location: 'Gaborone',
+    project_type: 'Web Development',
+    score: 85,
+    matched_at: new Date().toISOString()
+  }));
+
+  res.json(matchedStudents);
 });
 
 // Catch-all handler for unhandled routes

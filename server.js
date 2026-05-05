@@ -143,9 +143,33 @@ async function sendOtpEmail(email, purpose) {
   return code;
 }
 
-async function validateSignupPayload(role, password, profile) {
+function validateStrongPassword(password) {
   if (!password || password.length < 6) {
     return 'Password must be at least 6 characters long.';
+  }
+
+  // Check for at least one letter
+  if (!/[a-zA-Z]/.test(password)) {
+    return 'Password must contain at least one letter.';
+  }
+
+  // Check for at least one number
+  if (!/\d/.test(password)) {
+    return 'Password must contain at least one number.';
+  }
+
+  // Check for at least one symbol
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return 'Password must contain at least one symbol (e.g., !@#$%^&*).';
+  }
+
+  return null; // Password is valid
+}
+
+async function validateSignupPayload(role, password, profile) {
+  const passwordError = validateStrongPassword(password);
+  if (passwordError) {
+    return passwordError;
   }
 
   if (role === 'student') {
@@ -449,8 +473,9 @@ app.post('/api/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Email, code, and new password are required.' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    const passwordError = validateStrongPassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
 
     const valid = await verifyOtp(email, code, 'reset');
@@ -461,6 +486,32 @@ app.post('/api/reset-password', async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE users SET password = $1 WHERE email = $2', [hashedPassword, email]);
     res.json({ message: 'Password reset successfully.' });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.post('/api/change-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword) {
+      return res.status(400).json({ error: 'Email and new password are required.' });
+    }
+
+    const passwordError = validateStrongPassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
+    }
+
+    // Check if user exists
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password = $1 WHERE email = $2', [hashedPassword, email]);
+    res.json({ message: 'Password changed successfully.' });
   } catch (error) {
     handleError(res, error);
   }
@@ -1206,6 +1257,33 @@ app.get('/api/coordinator/organizations', async (req, res) => {
        LEFT JOIN users su ON su.id = m.student_id
        WHERE u.role = 'organization'
        GROUP BY u.id, p.location, p.project_type, p.required_skills`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+app.get('/api/organization/students', async (req, res) => {
+  try {
+    const role = req.query.role;
+    const email = req.query.email;
+    if (role !== 'organization') {
+      return res.status(403).json({ error: 'Only organizations can access this endpoint.' });
+    }
+    if (!email) {
+      return res.status(400).json({ error: 'Email query parameter is required.' });
+    }
+
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.email, u.student_id, u.program, p.location, p.project_type, m.score, m.created_at AS matched_at
+       FROM users u
+       JOIN matches m ON m.student_id = u.id
+       JOIN users org ON org.id = m.organization_id
+       LEFT JOIN preferences p ON p.user_id = u.id
+       WHERE org.email = $1 AND u.role = 'student'
+       ORDER BY m.created_at DESC`,
+      [email]
     );
     res.json(result.rows);
   } catch (error) {

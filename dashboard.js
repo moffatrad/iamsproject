@@ -2,9 +2,11 @@
   'use strict';
 
   // Backend API configuration
-  const API_BASE = window.location.hostname === 'localhost' 
-    ? 'http://localhost:3000'
-    : 'https://iamsproject-production.up.railway.app';
+  const API_BASE = window.location.hostname === 'localhost'
+    ? window.location.origin
+    : window.location.protocol === 'file:'
+      ? 'http://localhost:3000'
+      : 'https://iamsproject-production.up.railway.app';
 
   const currentRole = localStorage.getItem('iams_user_role');
   const userEmail = localStorage.getItem('iams_user_email');
@@ -1139,6 +1141,7 @@
       </div>
     `).join('');
   }
+
 
   document.getElementById('profileForm').addEventListener('submit', async (e) => {
     e.preventDefault();
